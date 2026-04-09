@@ -49,6 +49,10 @@ updated_at: "2026-04-08"            # 最后更新时间，每次操作后更新
 - archived_pages: {整数}             # status=archived 的 canon 页总数
 - archive_rate_30d: {整数}           # 近30天内新增归档页数
 - compile_rate_30d: {整数}           # 近30天内 compile 操作次数
+- writeback_proposal_count: {整数}   # query write-back 产生的 proposal 累计总数
+- writeback_conversion_rate: {浮点数 | ~}  # write-back proposal 被 compiled 的比例（compiled数 / 总数），无数据时为 ~
+- consecutive_approve_count: {整数}  # 最近连续 approve 次数（遇到 reject 重置为 0），用于审查模式预警
+- total_queries_with_writeback: {整数}  # 触发 write-back 的查询总次数
 ```
 
 ### 更新规则
@@ -75,6 +79,10 @@ updated_at: "2026-04-08"            # 最后更新时间，每次操作后更新
 | `活跃领域列表` | compile | Step 7 末尾（create/archive 时） | 重新统计各领域页面数 |
 | `confidence_health` | compile | Step 7 末尾 | 按阈值计算：low页数/总页数 < 50% → healthy；50-80% → degraded；> 80% → critical |
 | `staleness_health` | lint | Step 6 末尾 | 按阈值计算：avg_staleness_days < 30 → healthy；30-90 → warning；> 90 → critical |
+| `writeback_proposal_count` | lint | Step 5.5 | 计数 `changes/` 下 `origin: query-writeback` 的 proposal 文件 |
+| `writeback_conversion_rate` | lint | Step 5.5 | 计算 write-back proposal 中 `compiled: true` 的比例 |
+| `consecutive_approve_count` | promote | Step 4 末尾 | 每次 approve +1；每次 reject 重置为 0 |
+| `total_queries_with_writeback` | query | Step 6 | 每次 write-back 触发时 +1 |
 
 ---
 

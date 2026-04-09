@@ -133,7 +133,7 @@ canon/_index.md
 
 ---
 
-### Step 6（可选）：追加 LOG
+### Step 6（可选）：追加 LOG 与 write-back 追踪
 
 仅当查询具有以下特征时才追加日志，避免日志噪音：
 
@@ -141,13 +141,27 @@ canon/_index.md
 - 触发了 write-back（Step 5）
 - 用户问题导致了多跳导航（跨 2 个以上领域）
 
-日志追加位置：`logs/query.log`（若不存在则创建）
+**日志追加规则**：
+
+- write-back 相关日志：写入 `.wiki/changes/LOG.md`（因为 write-back 产生了 changes/ 目录下的文件变更）
+- 纯查询日志：写入 `.wiki/policy/LOG.md`
 
 日志格式：
 
 ```
-[{timestamp}] Q: {问题摘要（≤50字）} | 类型: {问题类型} | 来源页: {slug列表} | write-back: {yes/no}
+[{timestamp}] Q: {问题摘要（≤50字）} | 类型: {问题类型} | 来源页: {slug列表} | write-back: {yes/no} | canon外推断占比: {百分比}
 ```
+
+**write-back 转化追踪**：
+
+当 write-back 触发时，在生成的 proposal 文件 frontmatter 中增加 `origin: query-writeback` 标记。系统可据此统计：
+
+- `writeback_proposal_count`：write-back 产生的 proposal 总数
+- `writeback_conversion_rate`：write-back proposal 最终被 compiled 的比例（compiled 数 / 总数）
+
+此指标由 lint 在 Step 5.5 中计算并写入 STATE.md。
+
+**write-back SLA**：write-back 生成的 proposal 应在 14 天内完成 promote 审查。超过 14 天未审查的 write-back proposal 由 lint L008 以 WARNING 级别报告（与普通 proposal 的 7 天阈值区分，write-back proposal 标注 `[WRITEBACK-OVERDUE]`）。
 
 ---
 

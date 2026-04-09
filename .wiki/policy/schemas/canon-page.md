@@ -28,6 +28,8 @@ cross_refs:                         # 可选，引用的其他 canon 页面 slug
 status: active                      # 枚举: active | archived | draft
 has_divergence: false               # 可选，reconcile keep_both 裁决后设为 true，表示该页面保留了并存的分歧观点
 tags: [tag1, tag2]                  # 可选
+last_queried_at: ~                  # 可选，最后一次被 query spec 引用的日期（由 query spec 更新）
+query_count: 0                      # 可选，累计被 query spec 引用次数（由 query spec 更新）
 ---
 ```
 
@@ -46,6 +48,8 @@ tags: [tag1, tag2]                  # 可选
 | cross_refs | 否 | 正文中引用的其他 canon 页面 slug 列表 |
 | status | 是 | active（活跃）/ archived（已归档）/ draft（草稿） |
 | tags | 否 | 关键词标签 |
+| last_queried_at | 否 | 最后一次被 query spec 引用的日期（YYYY-MM-DD），由 query spec 在 Step 3 读取页面时自动更新 |
+| query_count | 否 | 累计被 query spec 引用次数，初始为 0，每次 query 引用时 +1 |
 | has_divergence | 否 | reconcile keep_both 裁决后由 reconcile spec 设为 true，表示页面中保留了并存的分歧观点；默认 false 或缺失 |
 
 ## 页面类型模板

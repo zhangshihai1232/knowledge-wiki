@@ -262,23 +262,81 @@ version: 1.0
 
 ---
 
+## A6：系统效能层专家
+
+**负责属性**：属性13（知识利用效率）+ 属性14（蒸馏效率）+ 属性15（跨领域一致性）+ 属性16（系统可演化性）
+
+**输出文件**：`evaluation/findings/06-system-efficiency.md`
+
+```
+你是一位知识治理专家，专注于评估知识系统的整体效能与可持续性。
+
+请阅读以下文件：
+- .wiki/policy/specs/query.md（重点：write-back 机制、利用追踪）
+- .wiki/policy/specs/ingest.md（重点：提取效率）
+- .wiki/policy/specs/compile.md（重点：编译效率、跨域处理）
+- .wiki/policy/specs/lint.md（重点：跨域一致性检查、主动巡检）
+- .wiki/policy/specs/maintain.md（重点：领域管理、系统扩展）
+- .wiki/policy/schemas/canon-page.md（重点：last_queried_at、query_count）
+- .wiki/policy/schemas/state-log.md（重点：writeback 指标、健康度追踪）
+
+基于阅读，评估以下四个属性：
+
+**属性13：知识利用效率**
+核心问题：被编译入 canon 的知识是否真正被查询使用？是否存在大量"沉睡知识"？
+评估维度：
+- canon-page schema 是否支持利用追踪（last_queried_at、query_count）？
+- query spec 是否有机制更新利用追踪字段？
+- 系统是否能基于利用数据驱动知识库优化（如归档沉睡页面、优先更新高频页面）？
+- 利用效率指标是否被纳入 STATE.md 的健康度评估？
+
+**属性14：蒸馏效率**
+核心问题：从原始资料到 canon 知识的转化链路是否高效？
+评估维度：
+- source → proposal → compiled 的端到端转化率是否可度量？
+- 各环节（ingest、promote、compile）是否有明确的 SLA 或时效预期？
+- 低质量提案过滤（auto_quality_score < 0.4）是否有效减少审查负担？
+- writeback_conversion_rate 指标是否能反映知识补充效率？
+
+**属性15：跨领域一致性**
+核心问题：不同领域的知识在质量标准和结构规范上是否一致？
+评估维度：
+- lint 规则是否跨领域统一执行？
+- 各领域是否可能出现 confidence 分布严重偏斜？
+- 模板遵循是否由 spec 强制执行？
+- 领域间 cross_refs 的准确性如何保证？
+
+**属性16：系统可演化性**
+核心问题：系统是否能低成本适应新领域、新规则、新场景？
+评估维度：
+- 新增领域的配置成本如何？
+- lint 规则是否可独立扩展（新增 L012 不影响 L001-L011）？
+- schema 的 version 字段是否支持向后兼容演化？
+- spec 间耦合度如何？修改一个 spec 需要连锁修改几个其他 spec？
+
+输出格式同 A1，但包含四个属性节，写入 evaluation/findings/06-system-efficiency.md
+```
+
+---
+
 ## A0：汇总 Agent
 
-**读取**：全部 5 个 findings 文件
+**读取**：全部 6 个 findings 文件
 
 **输出文件**：`evaluation/SCORECARD.md`
 
 ```
 你是知识治理评估的汇总专家。
 
-请阅读以下 5 个维度评估报告：
+请阅读以下 6 个维度评估报告：
 - evaluation/findings/01-knowledge-ingestion.md
 - evaluation/findings/02-knowledge-structure.md
 - evaluation/findings/03-knowledge-consistency.md
 - evaluation/findings/04-knowledge-freshness.md
 - evaluation/findings/05-governance-usability.md
+- evaluation/findings/06-system-efficiency.md
 
-基于这 5 份报告，生成 evaluation/SCORECARD.md，格式如下：
+基于这 6 份报告，生成 evaluation/SCORECARD.md，格式如下：
 
 # LLM Wiki 知识治理质量评分卡
 
@@ -302,6 +360,10 @@ version: 1.0
 | 10 | 审查负担可控性 | x/10 | ... |
 | 11 | 知识缺口主动发现 | x/10 | ... |
 | 12 | 查询回答可信度标注 | x/10 | ... |
+| 13 | 知识利用效率 | x/10 | ... |
+| 14 | 蒸馏效率 | x/10 | ... |
+| 15 | 跨领域一致性 | x/10 | ... |
+| 16 | 系统可演化性 | x/10 | ... |
 
 ## 跨维度 Top 问题（按影响程度排序）
 

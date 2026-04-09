@@ -195,9 +195,17 @@ last_promote_at: 2026-04-08T14:30:00+08:00
 
 - `reviewed_by`：非空字符串
 - `reviewed_at`：符合 ISO 8601 格式的时间戳
-- `approve_note`：非空字符串，长度 ≥ 10 字，且不得为以下占位符（大小写不敏感）：`同意`、`ok`、`approve`、`通过`、`yes`、`好的`、`确认`
+- `approve_note`：非空字符串，长度 ≥ 20 字，且不得为以下占位符（大小写不敏感）：`同意`、`ok`、`approve`、`通过`、`yes`、`好的`、`确认`
 
 若任一字段缺失或 `approve_note` 为占位符，提示审查者补充，**不得将不完整的提案写入 approved 目录**。
+
+**Gate 1.5：连续 approve 预警**
+
+在每次 approve 操作后，统计最近 10 次 promote 决策中 approve 的比例。若连续 approve 率达到 100%（即最近 10 次全部为 approve，无任何 reject），则向审查者输出以下预警：
+
+> ⚠️ **审查模式预警**：最近 10 次 promote 决策全部为 approve，未产生任何 reject。请确认审查是否充分，避免形式化审查导致低质量知识进入 canon。
+
+此预警不阻断操作，仅作为提醒。同时在 LOG 中记录 `[REVIEW-PATTERN] consecutive_approve_count=10`。
 
 **Gate 2：rejected 提案原因检查**
 
