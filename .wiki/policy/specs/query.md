@@ -34,9 +34,21 @@ quality_gates:
 
 ---
 
+## 步骤责任标记说明
+
+每个步骤标题带有执行责任标记：
+
+| 标记 | 含义 | 执行者 |
+|------|------|--------|
+| 🧠 | 语义推理步骤 | LLM（Skill 层） |
+| ⚙️ | 确定性操作步骤 | CLI（`wiki-ops` 工具） |
+| 🤝 | 人机交互步骤 | 人工决策，LLM 辅助 |
+
+⚙️ 步骤中的文件操作**必须**通过 `wiki-ops` CLI 命令执行，不得由 LLM 直接操作文件系统。
+
 ## Steps
 
-### Step 1：解析问题意图
+### Step 1 🧠：解析问题意图
 
 读取用户输入，将问题归类为以下四种类型之一：
 
@@ -51,7 +63,7 @@ quality_gates:
 
 ---
 
-### Step 2：导航定位候选 canon 页面
+### Step 2 🧠：导航定位候选 canon 页面
 
 按照以下层级导航结构，定位与问题相关的 canon 页面：
 
@@ -75,7 +87,7 @@ canon/_index.md
 
 ---
 
-### Step 3：读取候选页面，综合回答
+### Step 3 🧠：读取候选页面，综合回答
 
 逐一读取 Step 2 筛选出的候选 canon 页面，执行以下操作：
 
@@ -95,7 +107,7 @@ canon/_index.md
 
 ---
 
-### Step 4：来源完整性检查
+### Step 4 🧠：来源完整性检查
 
 在输出回答前，对每个关键声明进行来源审查：
 
@@ -126,7 +138,7 @@ canon/_index.md
 
 ---
 
-### Step 5（可选）：write-back——发现知识缺口时生成 proposal
+### Step 5 ⚙️🧠（可选）：write-back——发现知识缺口时生成 proposal
 
 触发条件：在 Step 2 或 Step 4 中发现以下任一情况：
 
@@ -151,6 +163,24 @@ canon/_index.md
    compiled: false
    ---
    ```
+
+**CLI 执行**：
+
+```bash
+# 去重检查
+wiki-ops dedup-check --target-page "{domain}/{category}/{slug}"
+
+# 创建 write-back proposal
+wiki-ops create-proposal \
+  --action create \
+  --target-page "{domain}/{category}/{slug}" \
+  --trigger-source "system:query-writeback" \
+  --confidence low \
+  --body-file /tmp/query-gap-body.md
+```
+
+> **LLM 职责**：判断知识缺口、确定 target_page、撰写 proposal 正文（缺失知识描述、建议 canon 页面、触发此缺口的原始问题）。
+
 3. proposal 内容包括：
    - 缺失知识的主题描述
    - 建议新增的 canon 页面 slug 和所属领域
@@ -163,7 +193,7 @@ canon/_index.md
 
 ---
 
-### Step 6（可选）：追加 LOG 与 write-back 追踪
+### Step 6 ⚙️（可选）：追加 LOG 与 write-back 追踪
 
 仅当查询具有以下特征时才追加日志，避免日志噪音：
 
@@ -180,6 +210,14 @@ canon/_index.md
 
 ```
 [{timestamp}] Q: {问题摘要（≤50字）} | 类型: {问题类型} | 来源页: {slug列表} | write-back: {yes/no} | canon外推断占比: {百分比}
+```
+
+**CLI 执行**：
+
+```bash
+wiki-ops append-log --spec query \
+  --message "Q: {问题摘要} | 类型: {问题类型} | 来源页: {slug列表} | write-back: yes"
+wiki-ops update-state
 ```
 
 **write-back 转化追踪**：

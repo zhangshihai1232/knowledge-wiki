@@ -30,9 +30,21 @@ compile spec 在检出冲突后将 proposal 路由至 `changes/conflicts/`，并
 
 ---
 
+## 步骤责任标记说明
+
+每个步骤标题带有执行责任标记：
+
+| 标记 | 含义 | 执行者 |
+|------|------|--------|
+| 🧠 | 语义推理步骤 | LLM（Skill 层） |
+| ⚙️ | 确定性操作步骤 | CLI（`wiki-ops` 工具） |
+| 🤝 | 人机交互步骤 | 人工决策，LLM 辅助 |
+
+⚙️ 步骤中的文件操作**必须**通过 `wiki-ops` CLI 命令执行，不得由 LLM 直接操作文件系统。
+
 ## Steps
 
-### Step 1：读取冲突 proposal，定位 canon 页冲突位置
+### Step 1 ⚙️：读取冲突 proposal，定位 canon 页冲突位置
 
 读取 `changes/conflicts/` 中待处理的 conflict proposal，提取：
 
@@ -52,9 +64,16 @@ trigger_source: <触发冲突的 source 文件路径>
 <<<END_CONFLICT>>>
 ```
 
+**CLI 辅助**：
+
+```bash
+wiki-ops frontmatter get changes/conflicts/2026-04-08-update-transformer.md target_page
+wiki-ops frontmatter get changes/conflicts/2026-04-08-update-transformer.md conflict_location
+```
+
 ---
 
-### Step 2：收集裁决依据
+### Step 2 🧠⚙️：收集裁决依据
 
 对冲突双方分别收集以下信息：
 
@@ -67,7 +86,7 @@ trigger_source: <触发冲突的 source 文件路径>
 
 ---
 
-### Step 3：生成裁决建议
+### Step 3 🧠：生成裁决建议
 
 基于以下优先级规则，生成结构化裁决建议（不自动执行，提交人工确认）：
 
@@ -92,7 +111,7 @@ trigger_source: <触发冲突的 source 文件路径>
 
 ---
 
-### Step 4：人工确认裁决方案
+### Step 4 🤝：人工确认裁决方案
 
 将 Step 3 的裁决建议呈现给人工审查者，等待以下决策之一：
 
@@ -102,7 +121,7 @@ trigger_source: <触发冲突的 source 文件路径>
 
 ---
 
-### Step 5：执行内容合并，清除冲突标记
+### Step 5 🧠⚙️：执行内容合并，清除冲突标记
 
 按确认的裁决方案更新 canon 页：
 
@@ -118,9 +137,23 @@ trigger_source: <触发冲突的 source 文件路径>
    - 若裁决为 `keep_both`（并存）→ `confidence: medium`（两方来源均已保留，视为多来源佐证）
    - 若页面在本次裁决前 confidence 已为 `high` → 维持 `medium`（high 需重新经 promote 流程授予）
 
+**CLI 执行**：
+
+```bash
+# 替换冲突标记为合并内容
+wiki-ops resolve-conflict canon/domains/ai/architectures/transformer.md --merged-file /tmp/merged-content.md
+
+# 更新 frontmatter
+wiki-ops frontmatter set canon/domains/ai/architectures/transformer.md last_compiled "2026-04-08"
+wiki-ops frontmatter set canon/domains/ai/architectures/transformer.md staleness_days "0"
+wiki-ops frontmatter set canon/domains/ai/architectures/transformer.md confidence "medium"
+```
+
+> **LLM 职责**：根据裁决方案撰写合并后的内容（写入 merged-file），确定 confidence 值。
+
 ---
 
-### Step 6：归档 conflict proposal，更新 LOG
+### Step 6 ⚙️：归档 conflict proposal，更新 LOG
 
 1. 将 conflict proposal 的 `status` 更新为 `resolved`，补写字段：
    ```yaml
@@ -140,6 +173,15 @@ trigger_source: <触发冲突的 source 文件路径>
 - resolution: <保留现有 | 保留新内容 | 并存 | 人工合并>
 - resolved_by: <裁决人>
 - authority_basis: <裁决依据简述>
+```
+
+**CLI 执行**：
+
+```bash
+wiki-ops move-proposal changes/conflicts/2026-04-08-update-transformer.md --to resolved
+wiki-ops append-log --spec reconcile \
+  --message "target: ai/architectures/transformer | resolution: 并存 | resolved_by: alice"
+wiki-ops update-state
 ```
 
 ---
