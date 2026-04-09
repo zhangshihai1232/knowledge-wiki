@@ -43,9 +43,21 @@ quality_gates:
 
 ---
 
+## 步骤责任标记说明
+
+每个步骤标题带有执行责任标记：
+
+| 标记 | 含义 | 执行者 |
+|------|------|--------|
+| 🧠 | 语义推理步骤 | LLM（Skill 层） |
+| ⚙️ | 确定性操作步骤 | CLI（`wiki-ops` 工具） |
+| 🤝 | 人机交互步骤 | 人工决策，LLM 辅助 |
+
+⚙️ 步骤中的文件操作**必须**通过 `wiki-ops` CLI 命令执行，不得由 LLM 直接操作文件系统。
+
 ## Steps
 
-### Step 1：确认目标路径与命名
+### Step 1 🤝：确认目标路径与命名
 
 读取以下参数：
 
@@ -57,7 +69,7 @@ quality_gates:
 
 ---
 
-### Step 2：执行脚手架命令
+### Step 2 ⚙️：执行脚手架命令
 
 运行：
 
@@ -73,9 +85,11 @@ tools/bootstrap-wiki-repo.sh {target_dir} [--name {repo_name}] [--force]
 - 新的 `README.md`
 - 新的 `tools/bootstrap-wiki-repo.sh`
 
+脚手架命令会自动将 `wiki-ops.sh` 复制到新仓库的 `tools/` 目录，确保新仓库具备完整的 CLI 工具层。
+
 ---
 
-### Step 3：校验复制边界
+### Step 3 ⚙️：校验复制边界
 
 必须确认以下边界：
 
@@ -93,7 +107,7 @@ tools/bootstrap-wiki-repo.sh {target_dir} [--name {repo_name}] [--force]
 
 ---
 
-### Step 4：返回初始化结果
+### Step 4 🤝：返回初始化结果
 
 向用户返回：
 

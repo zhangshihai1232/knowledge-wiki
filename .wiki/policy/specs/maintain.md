@@ -154,9 +154,21 @@ quality_gates:
 
 ---
 
+## 步骤责任标记说明
+
+每个步骤标题带有执行责任标记：
+
+| 标记 | 含义 | 执行者 |
+|------|------|--------|
+| 🧠 | 语义推理步骤 | LLM（Skill 层） |
+| ⚙️ | 确定性操作步骤 | CLI（`wiki-ops` 工具） |
+| 🤝 | 人机交互步骤 | 人工决策，LLM 辅助 |
+
+⚙️ 步骤中的文件操作**必须**通过 `wiki-ops` CLI 命令执行，不得由 LLM 直接操作文件系统。
+
 ## Steps
 
-### Step 1：读取触发来源并分类问题
+### Step 1 🧠⚙️：读取触发来源并分类问题
 
 优先检查 `changes/approved/` 中是否存在满足以下条件的治理提案：
 
@@ -188,9 +200,22 @@ quality_gates:
 [Medium]   Source 无引用：3 个文件超 90 天（建议：source 清理）
 ```
 
+**CLI 辅助**：
+
+```bash
+# 获取系统统计
+wiki-ops count all
+
+# 执行结构性扫描
+wiki-ops scan --format json
+
+# 读取治理提案 frontmatter
+wiki-ops frontmatter get changes/approved/2026-04-08-maintain-staleness-refresh.md origin
+```
+
 ---
 
-### Step 2：生成维护计划
+### Step 2 🧠：生成维护计划
 
 对每组问题生成具体操作项，每条操作项包含：
 
@@ -216,7 +241,7 @@ quality_gates:
 
 ---
 
-### Step 3：展示计划，等待确认
+### Step 3 🤝：展示计划，等待确认
 
 将完整维护计划以结构化形式展示给人工，并按自主级别说明确认要求：
 
@@ -245,7 +270,7 @@ quality_gates:
 
 ---
 
-### Step 4：执行已批准操作
+### Step 4 ⚙️🧠：执行已批准操作
 
 按批准顺序依次执行，每完成一项操作后立即更新 STATE.md：
 
@@ -265,9 +290,25 @@ maintenance_log:
 2. Auto 操作（MOC 重组、cross-ref 修复）紧跟其触发操作之后执行
 3. 若某操作执行失败（如文件冲突），立即暂停并报告，不继续执行后续操作
 
+**CLI 执行（维护子操作）**：
+
+```bash
+# 内容归档：更新 frontmatter
+wiki-ops frontmatter set canon/domains/legacy-tools/tool-A.md status "archived"
+wiki-ops frontmatter set canon/domains/legacy-tools/tool-A.md archived_at "2026-04-09"
+
+# MOC 重组：从索引移除归档页面
+wiki-ops update-index --domain legacy-tools --action remove --slug tool-A
+
+# 标记治理提案为已消费
+wiki-ops mark-compiled changes/approved/2026-04-08-maintain-staleness-refresh.md
+```
+
+> **LLM 职责**：领域分裂方案设计（确定拆分边界、页面归属）、领域合并的重叠分析、内容归档候选评估。
+
 ---
 
-### Step 5：追加 LOG，输出执行摘要
+### Step 5 ⚙️：追加 LOG，输出执行摘要
 
 所有操作完成后，在 STATE.md 的 `log` 节追加本次维护记录，并输出执行摘要。
 
@@ -306,6 +347,14 @@ Quality Gates 检查：
 ✓ MOC重组后所有页面可导航（验证通过，0条无效链接）
 
 STATE.md 已更新。
+```
+
+**CLI 执行**：
+
+```bash
+wiki-ops append-log --spec maintain \
+  --message "操作: 内容归档 | 目标: legacy-tools/5页 | 结果: completed"
+wiki-ops update-state
 ```
 
 ---
