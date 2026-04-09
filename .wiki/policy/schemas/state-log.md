@@ -94,10 +94,10 @@ updated_at: "2026-04-08"            # 最后更新时间，每次操作后更新
 
 | 文件 | 路径 | 负责记录 |
 |------|------|---------|
-| policy LOG | `.wiki/policy/LOG.md` | ingest、lint、maintain 操作 |
-| changes LOG | `.wiki/changes/LOG.md` | promote、compile、reconcile 操作 |
+| policy LOG | `.wiki/policy/LOG.md` | ingest、lint、maintain 的主体执行日志 |
+| changes LOG | `.wiki/changes/LOG.md` | promote、compile、reconcile，以及 consume approved maintenance proposal 的记录 |
 
-**判断规则**：操作涉及 `changes/` 目录下文件变更的，写 `changes/LOG.md`；操作涉及 `sources/` 或系统状态检查的，写 `policy/LOG.md`。compile 同时写两个文件（compile 操作本身写 `changes/LOG.md`，post-compile-lint 结果写 `changes/LOG.md`）。
+**判断规则**：操作涉及 `changes/` 目录下文件变更的，写 `changes/LOG.md`；操作涉及 `sources/` 或系统状态检查的，写 `policy/LOG.md`。compile 会写 `changes/LOG.md`；maintain 默认写 `policy/LOG.md`，若本次消费了 approved maintenance proposal，则额外写 `changes/LOG.md` 记录消费动作。
 
 LOG.md 存放于 `.wiki/policy/LOG.md`，记录所有操作的追加日志。
 

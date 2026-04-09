@@ -4,9 +4,11 @@ name: maintain
 autonomy: propose
 triggers:
   - lint报告L007或多个L002
+  - changes/approved/ 中出现 `origin=lint-patrol` 的治理提案
   - 人工指令
 inputs:
   - lint报告
+  - changes/approved/*.md（仅 `origin=lint-patrol` 或 `target_page="_system/maintenance"`）
   - canon/**/*.md
   - STATE.md
 outputs:
@@ -25,6 +27,8 @@ quality_gates:
 
 本 spec 专注于处理 lint 报告中无法由单次写作操作自动修复的结构性问题——例如领域规模失控、大量内容陈旧、跨领域引用腐化等。这类操作会影响多个页面乃至整个领域的组织方式，因此默认自主级别为 **Propose**，部分高风险操作为 **Lock**（需人工明确批准方可执行）。
 
+此外，本 spec 也是 `origin=lint-patrol` 治理提案的**正式下游执行器**：这类 proposal 经 promote 批准后进入 `changes/approved/`，由 maintain 消费，而不是交给 compile。
+
 ---
 
 ## When to Run
@@ -35,6 +39,7 @@ quality_gates:
 |---|---|
 | lint 报告出现 **L007**（领域溢出） | 某领域页面数超过 50，已超出可维护上限 |
 | lint 报告出现 **≥3 条 L002**（陈旧页面） | 集中出现说明某领域整体失活，不宜逐页处理 |
+| `changes/approved/` 中出现 `origin=lint-patrol` 的 proposal | 表示 lint 已将治理问题汇总成维护提案，并经 promote 批准，需要正式执行 |
 | 人工明确下达维护指令 | 例如："请对 `ai-tools` 领域做一次全面清理" |
 
 **不触发本 spec 的情形**：单页 L002（由 refresh spec 处理）、格式错误 L001（由 lint 自动修复）。
@@ -151,9 +156,17 @@ quality_gates:
 
 ## Steps
 
-### Step 1：读取并分类 lint 报告
+### Step 1：读取触发来源并分类问题
 
-读取最新一份 lint 报告（通常位于 `STATE.md` 的 `lint_summary` 节或独立 `lint_report.md`），提取所有结构性问题条目。
+优先检查 `changes/approved/` 中是否存在满足以下条件的治理提案：
+
+- `origin = lint-patrol`
+- 或 `target_page = "_system/maintenance"`
+- 且 `compiled = false`
+
+若存在，则读取 proposal 正文中的触发指标、受影响页面列表、建议动作，将其视为本次维护的主输入；同时补充读取最新 lint 报告作为上下文验证。
+
+若不存在上述治理提案，则读取最新一份 lint 报告（通常位于 `STATE.md` 的 `lint_summary` 节或独立 `lint_report.md`），提取所有结构性问题条目。
 
 按以下两个维度分组：
 
@@ -257,6 +270,19 @@ maintenance_log:
 ### Step 5：追加 LOG，输出执行摘要
 
 所有操作完成后，在 STATE.md 的 `log` 节追加本次维护记录，并输出执行摘要。
+
+若本次维护由 approved 的 `lint-patrol` proposal 触发，则还需回写该 proposal：
+
+```yaml
+compiled: true
+compiled_at: <ISO 8601 时间戳>
+```
+
+并在 `changes/LOG.md` 中追加一条消费记录：
+
+```markdown
+- [YYYY-MM-DD] [maintain] consumed approved maintenance proposal: {filename}
+```
 
 **摘要格式**：
 

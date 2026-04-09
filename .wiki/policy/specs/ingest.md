@@ -9,7 +9,7 @@ inputs:
   - 文件
   - 文本
 outputs:
-  - sources/{kind}/{date}-{slug}.md
+  - sources/{articles|conversations|notes|references}/{date}-{slug}.md
   - changes/inbox/{date}-{action}-{target-slug}.md
 quality_gates:
   - source frontmatter 完整（type/source_kind/title/ingested_at/extracted 均已填写）
@@ -23,7 +23,7 @@ quality_gates:
 
 将用户提供的外部资料（URL、文件、文本粘贴）转化为两样产物：
 
-1. **source 文件**：存放于 `.wiki/sources/{kind}/`，保留原始内容，不改写，作为持久证据。
+1. **source 文件**：存放于 `.wiki/sources/` 下的标准子目录（`articles/`、`conversations/`、`notes/`、`references/`），保留原始内容，不改写，作为持久证据。
 2. **change proposal**：存放于 `.wiki/changes/inbox/`，基于 source 内容提取声明，映射到现有或新建的 canon 页面，等待后续 review/compile 处理。
 
 ingest 是知识进入系统的**唯一入口**。所有外部资料必须经过此 spec 处理，不得绕过直接写入 canon。

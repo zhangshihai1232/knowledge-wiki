@@ -72,9 +72,15 @@ AI 负责汇总信息、呈现对比视图、给出建议，但最终 approve / 
 
 若 target_page 对应的 canon 文件已存在，展示其完整内容或关键相关段落（超过 300 行时截取前后各 20 行并注明省略）。若为 `create` 类型提案，注明"目标页面尚不存在"。
 
-**2c. trigger_source 中的原始证据段落**
+**2c. trigger_source / origin 对应的触发证据**
 
-展示触发本次提案的原始信息来源。从提案 frontmatter 的 `trigger_source` 字段读取引用位置，然后展示对应的原文段落（对话摘录、文档片段、观测日志等），让审查者能够回溯提案依据，判断证据是否充分可信。
+按 proposal frontmatter 中的 `origin` 和 `trigger_source` 字段展示触发依据：
+
+- 若 `origin = ingest` 或 `manual`：从 `trigger_source` 指向的 `sources/...` 文件中展示原始证据段落（对话摘录、文档片段、观测日志等）
+- 若 `origin = query-writeback`：展示 proposal 正文中的原始用户问题摘录、覆盖缺口说明、建议补充的知识主题
+- 若 `origin = lint-patrol`：展示 proposal 正文中的触发指标快照、涉及页面列表、巡检结论与建议动作
+
+目标是让审查者能回溯提案依据，判断证据是否充分可信；对于 system proposal，不要求伪造 source 段落。
 
 **2d. AI 建议**
 
@@ -101,7 +107,9 @@ AI 从以下维度给出结构化建议，并明确表态支持或反对：
    status: approved
    ```
 2. 将提案文件从 `changes/inbox/` 或 `changes/review/` **移动**到 `changes/approved/`，文件名保持不变。**移动**意为：在目标目录写入文件后，**删除源目录的原始文件**，确保同一提案不在两个目录同时存在。
-3. 后续由 `compile` spec 负责将 approved 提案实际写入 canon 页。
+3. 后续由下游执行 spec 消费 approved 提案：
+   - 普通知识提案：由 `compile` spec 写入 canon
+   - `origin=lint-patrol` 且 `target_page="_system/maintenance"` 的治理提案：由 `maintain` spec 消费并执行
 
 **操作 B：reject（拒绝）**
 
@@ -164,11 +172,12 @@ AI 从以下维度给出结构化建议，并明确表态支持或反对：
 
 **4b. 更新 STATE.md 的 pending_proposals 计数**
 
-读取 `STATE.md`，将 `pending_proposals` 字段更新为当前 `changes/inbox/` 和 `changes/review/` 目录中剩余文件的总数：
+读取 `STATE.md`，将 `pending_proposals` 字段更新为当前 `changes/inbox/` 和 `changes/review/` 目录中剩余文件的总数，并同步维护 `consecutive_approve_count`：
 
 ```yaml
 pending_proposals: 0   # inbox + review 目录剩余文件数之和
 last_promote_at: 2026-04-08T14:30:00+08:00
+consecutive_approve_count: 4   # 若本批次最后一次决策为 approve，则基于最近一次 reject 起连续累计；若最后一次为 reject，则重置为 0
 ```
 
 ---
@@ -199,13 +208,31 @@ last_promote_at: 2026-04-08T14:30:00+08:00
 
 若任一字段缺失或 `approve_note` 为占位符，提示审查者补充，**不得将不完整的提案写入 approved 目录**。
 
+**Gate 1.2：system 生成的知识缺口提案来源检查**
+
+若 proposal 满足以下条件：
+
+- `origin = query-writeback`
+- `target_page` **不**以 `_system/` 开头
+
+则在将文件移动到 `changes/approved/` 之前，必须确认其已补充至少 1 个真实 `sources/...` 路径作为来源依据。若 `trigger_source` 仍为 `system:query-writeback`，说明该提案仍处于“知识缺口登记”阶段，**只能进入 modify/review，不得直接进入 approved 并交给 compile**。
+
+**Gate 1.3：lint-patrol 治理提案路由检查**
+
+若 proposal 满足以下条件：
+
+- `origin = lint-patrol`
+- `target_page = "_system/maintenance"`
+
+则其 `approve_note` 中必须明确写明“交由 maintain 执行”的处理意图。此类 proposal 在 approve 后进入 `changes/approved/`，但**不进入 compile**，由 maintain spec 作为结构治理任务消费。
+
 **Gate 1.5：连续 approve 预警**
 
-在每次 approve 操作后，统计最近 10 次 promote 决策中 approve 的比例。若连续 approve 率达到 100%（即最近 10 次全部为 approve，无任何 reject），则向审查者输出以下预警：
+在每次 approve 操作后，从最新决策向前回溯，直到遇到第一条 reject 为止，计算 `consecutive_approve_count`。若 `consecutive_approve_count >= 10`，则向审查者输出以下预警：
 
-> ⚠️ **审查模式预警**：最近 10 次 promote 决策全部为 approve，未产生任何 reject。请确认审查是否充分，避免形式化审查导致低质量知识进入 canon。
+> ⚠️ **审查模式预警**：自最近一次 reject 以来已连续 approve 10 次及以上。请确认审查是否充分，避免形式化审查导致低质量知识进入 canon。
 
-此预警不阻断操作，仅作为提醒。同时在 LOG 中记录 `[REVIEW-PATTERN] consecutive_approve_count=10`。
+此预警不阻断操作，仅作为提醒。同时在 LOG 中记录 `[REVIEW-PATTERN] consecutive_approve_count=<当前值>`。
 
 **Gate 2：rejected 提案原因检查**
 

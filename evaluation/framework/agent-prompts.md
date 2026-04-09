@@ -6,10 +6,19 @@ version: 1.0
 
 # Agent Team Prompt 模板
 
-本文件包含执行知识治理质量评估时，6 个 Agent 的标准 prompt。
+本文件包含执行知识治理质量评估时的标准 prompt。
 
-评估对象：`.wiki/policy/specs/` 和 `.wiki/policy/schemas/` 下的设计文档。
-评估性质：**设计审查**（在落地前评估方案质量），不依赖运行时数据。
+评估分为两种模式：
+
+1. **设计审查模式**
+   - 评估对象：`.wiki/policy/specs/` 和 `.wiki/policy/schemas/` 下的设计文档
+   - 用途：在落地前评估方案质量
+   - 默认使用 A1-A5 + A0
+
+2. **运行验证模式**
+   - 评估对象：运行日志、STATE/LOG、benchmark 结果、query 回答样本、实验记录
+   - 用途：验证系统真实运行后的效果
+   - 默认使用 A6 + A0；必要时补充读取设计文档辅助解释
 
 ---
 
@@ -271,7 +280,16 @@ version: 1.0
 ```
 你是一位知识治理专家，专注于评估知识系统的整体效能与可持续性。
 
-请阅读以下文件：
+**本 Agent 默认用于运行验证模式，而非纯设计审查。**
+
+请优先阅读以下运行时材料（若存在）：
+- .wiki/policy/STATE.md
+- .wiki/policy/LOG.md
+- .wiki/changes/LOG.md
+- evaluation/test-run-log.md
+- benchmark 数据集的实验记录、query 回答样本、统计结果文件
+
+必要时补充阅读以下设计文件，用于解释运行结果：
 - .wiki/policy/specs/query.md（重点：write-back 机制、利用追踪）
 - .wiki/policy/specs/ingest.md（重点：提取效率）
 - .wiki/policy/specs/compile.md（重点：编译效率、跨域处理）
@@ -281,6 +299,10 @@ version: 1.0
 - .wiki/policy/schemas/state-log.md（重点：writeback 指标、健康度追踪）
 
 基于阅读，评估以下四个属性：
+
+**重要约束**：
+- 若缺少支持某属性评分的运行数据，不得凭设计文档猜测分数
+- 数据不足时，必须标记为 `N/A（缺少运行数据）`
 
 **属性13：知识利用效率**
 核心问题：被编译入 canon 的知识是否真正被查询使用？是否存在大量"沉睡知识"？
@@ -321,28 +343,29 @@ version: 1.0
 
 ## A0：汇总 Agent
 
-**读取**：全部 6 个 findings 文件
+**读取**：设计审查模式读取 A1-A5 findings；运行验证模式读取 A1-A6 findings（若 A6 缺失，则属性 13-16 记为 `N/A`）
 
 **输出文件**：`evaluation/SCORECARD.md`
 
 ```
 你是知识治理评估的汇总专家。
 
-请阅读以下 6 个维度评估报告：
-- evaluation/findings/01-knowledge-ingestion.md
-- evaluation/findings/02-knowledge-structure.md
-- evaluation/findings/03-knowledge-consistency.md
-- evaluation/findings/04-knowledge-freshness.md
-- evaluation/findings/05-governance-usability.md
-- evaluation/findings/06-system-efficiency.md
+请先判断当前评估模式：
 
-基于这 6 份报告，生成 evaluation/SCORECARD.md，格式如下：
+- 若输入主要是 specs / schemas / framework 文档，则为**设计审查模式**
+- 若输入包含 STATE/LOG、实验日志、benchmark 结果、query 回答样本，则为**运行验证模式**
+
+然后按模式读取以下报告：
+- 设计审查模式：evaluation/findings/01-knowledge-ingestion.md ~ evaluation/findings/05-governance-usability.md
+- 运行验证模式：额外读取 evaluation/findings/06-system-efficiency.md
+
+基于相应报告，生成 evaluation/SCORECARD.md，格式如下：
 
 # LLM Wiki 知识治理质量评分卡
 
 > 评估日期：{日期}
-> 评估类型：设计审查（落地前）
-> 评估对象：.wiki/policy/specs/ + .wiki/policy/schemas/
+> 评估类型：{设计审查（落地前） | 运行验证（基于实验与日志）}
+> 评估对象：{.wiki/policy/specs/ + .wiki/policy/schemas/ | 运行日志 + benchmark + 回答样本 + 相关设计文档}
 
 ## 评分总览
 
@@ -360,10 +383,10 @@ version: 1.0
 | 10 | 审查负担可控性 | x/10 | ... |
 | 11 | 知识缺口主动发现 | x/10 | ... |
 | 12 | 查询回答可信度标注 | x/10 | ... |
-| 13 | 知识利用效率 | x/10 | ... |
-| 14 | 蒸馏效率 | x/10 | ... |
-| 15 | 跨领域一致性 | x/10 | ... |
-| 16 | 系统可演化性 | x/10 | ... |
+| 13 | 知识利用效率 | {x/10 或 N/A} | ... |
+| 14 | 蒸馏效率 | {x/10 或 N/A} | ... |
+| 15 | 跨领域一致性 | {x/10 或 N/A} | ... |
+| 16 | 系统可演化性 | {x/10 或 N/A} | ... |
 
 ## 跨维度 Top 问题（按影响程度排序）
 

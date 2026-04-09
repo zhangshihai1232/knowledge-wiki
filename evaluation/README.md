@@ -52,6 +52,11 @@ evaluation/
 │   ├── 03-knowledge-consistency.md   ← 属性5+6（A3 Agent 输出）
 │   ├── 04-knowledge-freshness.md     ← 属性7+8（A4 Agent 输出）
 │   └── 05-governance-usability.md    ← 属性9-12（A5 Agent 输出）
+├── protocols/                         ← 增强外部说服力的实验协议
+│   ├── evidence-strengthening-roadmap.md
+│   ├── real-log-replay-protocol.md
+│   ├── rater-consistency-protocol.md
+│   └── longitudinal-stability-protocol.md
 └── framework/
     ├── scoring-rubric.md              ← 12个属性的评分标准（可复用）
     └── agent-prompts.md               ← 6个 Agent 的标准 prompt 模板
@@ -84,6 +89,16 @@ A0 → 读取全部 findings → SCORECARD.md
 - 系统设计有重大变更（新增 Spec、修改核心流程）
 - 落地使用 3 个月后（从设计审查切换为运行时评估）
 - 发现系统性问题后（评估是否影响其他属性）
+
+## 何时进入增强证明实验
+
+当 frozen benchmark 已经得到“有效”结论，但仍需要继续证明：
+
+1. 真实日志场景也成立
+2. 多评审者判断具有一致性
+3. 长周期运行不会退化
+
+此时进入 `protocols/` 目录定义的下一阶段实验。
 
 ## 与 lint 的区别
 

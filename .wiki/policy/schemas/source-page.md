@@ -6,7 +6,7 @@ version: 1.0
 
 # Schema: Source Page
 
-source 文件存放于 `.wiki/sources/{kind}/` 下，保存原始资料和摄入元数据。
+source 文件存放于 `.wiki/sources/` 下的标准子目录中（`articles/`、`conversations/`、`notes/`、`references/`），保存原始资料和摄入元数据。
 
 ## Frontmatter 字段
 
@@ -43,6 +43,8 @@ authority: secondary                # 可选，来源权威性：authoritative |
 | extracted | 是 | `false` = 尚未提取声明；`true` = 已生成 proposal |
 | checksum | 否 | 内容 SHA-256 哈希，用于检测重复摄入 |
 | authority | 否 | 来源权威性：`authoritative`（权威来源，如官方文档、同行评审论文）/ `secondary`（二手资料，如博客、综述）/ `unverified`（来源不明或未经验证）。缺失时视为 `secondary`。compile spec 使用此字段确定 confidence 初始值 |
+
+> 目录映射：`article → articles/`，`conversation → conversations/`，`note → notes/`，`reference → references/`。
 
 ## 文件命名规范
 
