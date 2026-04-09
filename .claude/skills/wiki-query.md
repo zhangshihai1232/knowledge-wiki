@@ -9,6 +9,17 @@ description: 基于 canon 知识库回答问题，每个声明标注来源，触
 
 读取并严格遵循 `.wiki/policy/specs/query.md` 中的完整 Spec。
 
+## CLI 工具层
+
+query 以语义操作为主（🧠），仅在 write-back 和日志环节使用 CLI：
+
+```bash
+tools/wiki-ops.sh dedup-check --target-page <page>
+tools/wiki-ops.sh create-proposal --action create --target-page <page> --trigger-source "system:query-writeback" --confidence low --body-file <path>
+tools/wiki-ops.sh append-log --spec query --message <msg>
+tools/wiki-ops.sh update-state
+```
+
 ## 快速入口
 
 **当前工作目录**：检查 `.wiki/` 是否存在，如不存在提示用户先初始化。

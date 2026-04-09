@@ -105,10 +105,12 @@ cp "$REPO_ROOT/evaluation/benchmark/fixtures/templates/query-judging-rubric-v1.2
 cp "$REPO_ROOT/tools/bootstrap-wiki-repo.sh" "$SHARE_DIR/tools/"
 cp "$REPO_ROOT/tools/install-global.sh" "$SHARE_DIR/tools/"
 cp "$REPO_ROOT/tools/wiki.sh" "$SHARE_DIR/tools/"
+cp "$REPO_ROOT/tools/wiki-ops.sh" "$SHARE_DIR/tools/"
 chmod +x \
   "$SHARE_DIR/tools/bootstrap-wiki-repo.sh" \
   "$SHARE_DIR/tools/install-global.sh" \
-  "$SHARE_DIR/tools/wiki.sh"
+  "$SHARE_DIR/tools/wiki.sh" \
+  "$SHARE_DIR/tools/wiki-ops.sh"
 
 cat > "$MAIN_COMMAND_PATH" <<EOF
 #!/usr/bin/env bash

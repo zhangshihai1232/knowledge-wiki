@@ -507,9 +507,11 @@ cp "$REPO_ROOT/evaluation/benchmark/fixtures/templates/query-judging-rubric-v1.2
 cp "$SCRIPT_PATH" "$TARGET_DIR/tools/bootstrap-wiki-repo.sh"
 cp "$REPO_ROOT/tools/install-global.sh" "$TARGET_DIR/tools/install-global.sh"
 cp "$REPO_ROOT/tools/wiki.sh" "$TARGET_DIR/tools/wiki.sh"
+cp "$REPO_ROOT/tools/wiki-ops.sh" "$TARGET_DIR/tools/wiki-ops.sh"
 chmod +x "$TARGET_DIR/tools/bootstrap-wiki-repo.sh"
 chmod +x "$TARGET_DIR/tools/install-global.sh"
 chmod +x "$TARGET_DIR/tools/wiki.sh"
+chmod +x "$TARGET_DIR/tools/wiki-ops.sh"
 
 cat > "$TARGET_DIR/README.md" <<EOF
 # ${REPO_NAME}
@@ -548,6 +550,7 @@ evaluation/                 # 评测协议与结果目录
 tools/bootstrap-wiki-repo.sh
 tools/install-global.sh
 tools/wiki.sh
+tools/wiki-ops.sh              # 确定性操作 CLI 工具层
 \`\`\`
 
 ## 搭建下一套仓库

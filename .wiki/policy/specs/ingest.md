@@ -43,9 +43,23 @@ ingest 是知识进入系统的**唯一入口**。所有外部资料必须经过
 
 ---
 
+## 步骤责任标记说明
+
+每个步骤标题带有执行责任标记：
+
+| 标记 | 含义 | 执行者 |
+|------|------|--------|
+| 🧠 | 语义推理步骤 | LLM（Skill 层） |
+| ⚙️ | 确定性操作步骤 | CLI（`wiki-ops` 工具） |
+| 🤝 | 人机交互步骤 | 人工决策，LLM 辅助 |
+
+⚙️ 步骤中的文件操作**必须**通过 `wiki-ops` CLI 命令执行，不得由 LLM 直接操作文件系统。
+
+---
+
 ## Steps
 
-### Step 1：判断资料类型，确定存放子目录
+### Step 1 🧠：判断资料类型，确定存放子目录
 
 根据资料性质，确定 `source_kind` 枚举值和对应子目录：
 
@@ -71,7 +85,7 @@ ingest 是知识进入系统的**唯一入口**。所有外部资料必须经过
 
 ---
 
-### Step 2：创建 source 文件
+### Step 2 ⚙️：创建 source 文件
 
 按 `.wiki/policy/schemas/source-page.md` 定义的 schema 创建文件。
 
@@ -81,28 +95,29 @@ ingest 是知识进入系统的**唯一入口**。所有外部资料必须经过
 - 若资料有 URL，必须填写 `url` 字段
 - `ingested_at` 填写当前日期
 
-示例 frontmatter：
+**CLI 执行**：
 
-```yaml
----
-type: source
-source_kind: article
-title: "Attention Is All You Need"
-url: "https://arxiv.org/abs/1706.03762"
-author: "Vaswani et al."
-published_at: "2017-06-12"
-ingested_at: "2026-04-08"
-domain: "ai"
-tags: [transformer, attention, nlp, deep-learning]
-extracted: false
----
+LLM 先将资料原文写入临时文件，然后调用：
+
+```bash
+wiki-ops create-source \
+  --kind article \
+  --title "Attention Is All You Need" \
+  --domain ai \
+  --url "https://arxiv.org/abs/1706.03762" \
+  --author "Vaswani et al." \
+  --published-at "2017-06-12" \
+  --tags "transformer,attention,nlp,deep-learning" \
+  --body-file /tmp/source-body.md
 ```
 
-创建文件，写入 frontmatter 和 `## 原始内容` 节，将资料原文置于其下。`## 提取声明` 节暂时留空（Step 6 填写）。
+该命令自动完成：文件名生成（`{date}-{slug}.md`）、frontmatter 填充（含 `extracted: false`）、写入目标子目录。
+
+> **LLM 职责**：准备 `--body-file` 的内容（原始资料原文 + `## 提取声明` 空节），选择正确的 `--kind` 值（基于 Step 1 的判断结果）。
 
 ---
 
-### Step 3：从原始内容中提取 3–10 个关键声明
+### Step 3 🧠：从原始内容中提取 3–10 个关键声明
 
 从 `## 原始内容` 中识别具体、可验证、有知识价值的陈述，提取为声明列表。
 
@@ -125,7 +140,7 @@ extracted: false
 
 ---
 
-### Step 4：读取 `.wiki/canon/_index.md`，匹配现有 canon 页
+### Step 4 🧠：读取 `.wiki/canon/_index.md`，匹配现有 canon 页
 
 读取 `.wiki/canon/_index.md` 获取当前 canon 页面目录，对每条声明判断归属：
 
@@ -145,11 +160,11 @@ extracted: false
 
 ---
 
-### Step 4.5：提案质量预评分与去重检查
+### Step 4.5 🧠⚙️：提案质量预评分与去重检查
 
 在生成 proposal 文件之前，执行以下两项检查：
 
-**质量预评分**：
+**质量预评分 🧠**：
 
 对每个待生成的 proposal，AI 评估以下维度并输出 `auto_quality_score`（0-1 浮点数）：
 
@@ -163,22 +178,44 @@ extracted: false
 - `auto_quality_score >= 0.4`：proposal 写入 `changes/inbox/`（正常流程）
 - `auto_quality_score < 0.4`：proposal 写入 `changes/low-quality/`（暂存区，不进入主审查队列）
 
-**提案去重检查**：
+**提案去重检查 ⚙️**：
 
-在写入前，检查 `changes/inbox/` 和 `changes/review/` 中是否已存在针对同一 `target_page` 的 pending proposal：
+在写入前，通过 CLI 检查是否已存在针对同一 `target_page` 的 pending proposal：
 
-- 若存在：不生成新 proposal，在 LOG 中记录 `[DEDUP] 已存在针对 {target_page} 的待处理提案：{现有文件名}`，并将本次声明追加到现有 proposal 的 `## Source 证据` 节
+```bash
+wiki-ops dedup-check --target-page "ai/architectures/transformer"
+```
+
+输出 `unique`（可继续）或 `duplicate: <现有文件路径>`（需跳过）。
+
+- 若输出 `duplicate`：不生成新 proposal，在 LOG 中记录 `[DEDUP] 已存在针对 {target_page} 的待处理提案：{现有文件名}`，并将本次声明追加到现有 proposal 的 `## Source 证据` 节
 - 若不存在：正常生成新 proposal
 
 ---
 
-### Step 5：写入 proposal 到 `.wiki/changes/inbox/`
+### Step 5 ⚙️：写入 proposal 到 `.wiki/changes/inbox/`
 
 按 `.wiki/policy/schemas/change-proposal.md` 定义的 schema，为每个目标页面创建一个 proposal 文件。
 
-文件名规范：`{proposed_at}-{action}-{target-slug}.md`
+**CLI 执行**：
 
-示例：`2026-04-08-update-transformer.md` 或 `2026-04-08-create-attention-mechanism.md`
+LLM 先将 proposal 正文（提案摘要 + 变更内容 + Source 证据 + AI 建议）写入临时文件，然后调用：
+
+```bash
+wiki-ops create-proposal \
+  --action create \
+  --target-page "ai/architectures/transformer" \
+  --target-type concept \
+  --trigger-source "sources/articles/2026-04-08-attention-is-all-you-need.md" \
+  --confidence medium \
+  --body-file /tmp/proposal-body.md
+```
+
+该命令自动完成：文件名生成（`{date}-{action}-{target-slug}.md`）、frontmatter 填充（含 `status: inbox`、`compiled: false`）、写入 `changes/inbox/`。
+
+若 Step 4.5 质量预评分 `auto_quality_score < 0.4`，proposal 写入 `changes/low-quality/`（暂存区）。
+
+> **LLM 职责**：准备 `--body-file` 的内容（提案摘要、变更内容、Source 证据、AI 建议四节），选择正确的 `--action`、`--target-page`、`--confidence` 值。
 
 **完整 proposal 示例**：
 
@@ -244,52 +281,34 @@ WMT 2014 英德翻译：BLEU 28.4，超越当时所有已知结果。
 
 ---
 
-### Step 6：更新 source 文件 extracted: true
+### Step 6 ⚙️：更新 source 文件 extracted: true
 
 回到 Step 2 创建的 source 文件：
 
-1. 将 frontmatter 中 `extracted: false` 改为 `extracted: true`
-2. 在 `## 提取声明` 节追加 Step 3 提取的声明列表（原样粘贴）
+**CLI 执行**：
 
-此步骤标志该 source 文件已完成处理，不会被重复摄入。
+```bash
+# 标记 source 为已提取
+wiki-ops mark-extracted sources/articles/2026-04-08-attention-is-all-you-need.md
+```
+
+该命令自动将 frontmatter 中 `extracted: false` 改为 `extracted: true`。
+
+> **LLM 职责**：在调用 `mark-extracted` 前，先将 Step 3 提取的声明列表追加到 source 文件的 `## 提取声明` 节（此为内容写入操作，由 LLM 直接执行）。
 
 ---
 
-### Step 7：追加 LOG，更新 STATE.md
+### Step 7 ⚙️：追加 LOG，更新 STATE.md
 
-**追加操作记录到 `.wiki/policy/LOG.md`**：
+**CLI 执行**：
 
-在 `LOG.md` 末尾追加一条记录，格式如下：
+```bash
+# 追加操作记录到 LOG.md
+wiki-ops append-log --spec ingest \
+  --message "source: sources/articles/2026-04-08-attention-is-all-you-need.md | proposals: 2026-04-08-create-transformer.md | action: create | note: 摄入 Transformer 原始论文"
 
-```
-## {ingested_at} ingest
-
-- source: `sources/{kind}/{date}-{slug}.md`
-- proposals: {N} 个（列出文件名，逗号分隔）
-- action: {create/update/混合}
-- note: {可选，一句话备注，如"首次摄入 Transformer 相关资料"}
-```
-
-示例：
-
-```
-## 2026-04-08 ingest
-
-- source: `sources/articles/2026-04-08-attention-is-all-you-need.md`
-- proposals: `2026-04-08-create-transformer.md`, `2026-04-08-create-attention-mechanism.md`
-- action: create
-- note: 首次摄入 Transformer 原始论文，提取 5 条声明，生成 2 个 create 提案
-```
-
-**更新 `.wiki/policy/STATE.md`**：
-
-读取 `STATE.md`，更新以下字段后写回：
-
-```yaml
-total_sources: <sources/ 下非 .gitkeep 文件总数（重新计数）>
-last_ingest: <今日日期，格式 YYYY-MM-DD>
-pending_proposals: <changes/inbox/ + changes/review/ 文件数之和>
-updated_at: <今日日期>
+# 更新 STATE.md（自动重算 total_sources、pending_proposals 等）
+wiki-ops update-state
 ```
 
 ---
@@ -343,43 +362,58 @@ updated_at: <今日日期>
 
 **执行过程**：
 
-**Step 1**：资料有标题、作者、发布时间，且是学术文章 → `source_kind: article`，存入 `.wiki/sources/articles/`，slug 为 `attention-is-all-you-need`，文件名 `2026-04-08-attention-is-all-you-need.md`。
+**Step 1 🧠**：资料有标题、作者、发布时间，且是学术文章 → `source_kind: article`，存入 `.wiki/sources/articles/`，slug 为 `attention-is-all-you-need`，文件名 `2026-04-08-attention-is-all-you-need.md`。
 
-**Step 2**：创建 source 文件：
+**Step 2 ⚙️**：调用 CLI 创建 source 文件：
 
+```bash
+wiki-ops create-source \
+  --kind article \
+  --title "Attention Is All You Need" \
+  --domain ai \
+  --url "https://arxiv.org/abs/1706.03762" \
+  --author "Vaswani et al." \
+  --published-at "2017-06-12" \
+  --tags "transformer,attention,nlp,deep-learning" \
+  --body-file /tmp/source-body.md
+# → 输出: .wiki/sources/articles/2026-04-08-attention-is-all-you-need.md
 ```
-.wiki/sources/articles/2026-04-08-attention-is-all-you-need.md
-```
 
-frontmatter 填写 `type: source`，`source_kind: article`，`url: https://arxiv.org/abs/1706.03762`，`extracted: false`，`## 原始内容` 下粘贴原文。
-
-**Step 3**：提取 4 条声明：
+**Step 3 🧠**：提取 4 条声明：
 1. Transformer 完全基于注意力机制，不使用递归或卷积。（原文：摘要第1句）
 2. Transformer 比基于 RNN 的模型更可并行化，训练时间显著减少。（原文：摘要第2句）
 3. WMT 2014 英德翻译 BLEU 28.4，超越现有最佳 2 BLEU 以上。（原文：摘要第3句）
 4. WMT 2014 英法翻译单模型 BLEU 41.0，创单模型新纪录。（原文：摘要第4句）
 
-**Step 4**：读取 `.wiki/canon/_index.md`，未找到 `transformer` 或 `attention-mechanism` 相关页面 → 全部声明归入一个 `action: create` 的 proposal，`target_page: ai/architectures/transformer`。
+**Step 4 🧠**：读取 `.wiki/canon/_index.md`，未找到 `transformer` 或 `attention-mechanism` 相关页面 → 全部声明归入一个 `action: create` 的 proposal，`target_page: ai/architectures/transformer`。
 
-**Step 5**：创建 proposal 文件：
+**Step 5 ⚙️**：调用 CLI 创建 proposal 文件：
 
+```bash
+wiki-ops create-proposal \
+  --action create \
+  --target-page "ai/architectures/transformer" \
+  --target-type concept \
+  --trigger-source "sources/articles/2026-04-08-attention-is-all-you-need.md" \
+  --confidence medium \
+  --body-file /tmp/proposal-body.md
+# → 输出: .wiki/changes/inbox/2026-04-08-create-transformer.md
 ```
-.wiki/changes/inbox/2026-04-08-create-transformer.md
+
+**Step 6 ⚙️**：调用 CLI 标记 source 为已提取：
+
+```bash
+wiki-ops mark-extracted sources/articles/2026-04-08-attention-is-all-you-need.md
 ```
 
-写入完整 frontmatter 和正文（含提案摘要、变更内容、Source 证据、AI 建议）。
+LLM 同时将 4 条声明追加到 source 文件的 `## 提取声明` 节。
 
-**Step 6**：将 source 文件 `extracted` 改为 `true`，追加 4 条声明到 `## 提取声明` 节。
+**Step 7 ⚙️**：调用 CLI 追加日志和更新状态：
 
-**Step 7**：在 `LOG.md` 追加：
-
-```
-## 2026-04-08 ingest
-
-- source: `sources/articles/2026-04-08-attention-is-all-you-need.md`
-- proposals: `2026-04-08-create-transformer.md`
-- action: create
-- note: 摄入 Transformer 原始论文摘要，提取 4 条声明，生成 1 个 create 提案
+```bash
+wiki-ops append-log --spec ingest \
+  --message "source: sources/articles/2026-04-08-attention-is-all-you-need.md | proposals: 2026-04-08-create-transformer.md | action: create | note: 摄入 Transformer 原始论文摘要"
+wiki-ops update-state
 ```
 
 **Quality Gates 检查**：

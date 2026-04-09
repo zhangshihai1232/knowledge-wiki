@@ -9,6 +9,10 @@ description: 初始化一个新的 LLM Wiki 仓库脚手架，触发关键词：
 
 读取并严格遵循 `.wiki/policy/specs/bootstrap.md` 中的完整 Spec。
 
+## CLI 工具层
+
+bootstrap 主要通过 `tools/bootstrap-wiki-repo.sh` 脚本执行。该脚本会自动将 `wiki-ops.sh` 复制到新仓库的 `tools/` 目录，确保新仓库具备完整的 CLI 工具层。
+
 ## 快速入口
 
 **当前工作目录**：检查当前仓库是否包含 `tools/bootstrap-wiki-repo.sh`。  

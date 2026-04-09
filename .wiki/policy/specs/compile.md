@@ -42,9 +42,21 @@ compile **只处理可直接写入 canon 的知识提案**。`origin=lint-patrol
 
 ---
 
+## 步骤责任标记说明
+
+每个步骤标题带有执行责任标记：
+
+| 标记 | 含义 | 执行者 |
+|------|------|--------|
+| 🧠 | 语义推理步骤 | LLM（Skill 层） |
+| ⚙️ | 确定性操作步骤 | CLI（`wiki-ops` 工具） |
+| 🤝 | 人机交互步骤 | 人工决策，LLM 辅助 |
+
+⚙️ 步骤中的文件操作**必须**通过 `wiki-ops` CLI 命令执行，不得由 LLM 直接操作文件系统。
+
 ## Steps
 
-### Step 1：读取 approved proposal，解析 target_page / action / proposed diff
+### Step 1 🧠⚙️：读取 approved proposal，解析 target_page / action / proposed diff
 
 读取待编译 proposal 文件，提取以下关键字段：
 
@@ -72,11 +84,18 @@ canon/domains/{target_page}.md
 - 若 `origin = lint-patrol` 或 `target_page` 以 `_system/` 开头：在 LOG 中记录 `SKIP: routed to maintain`，本次 compile 跳过该 proposal，不修改其 `compiled` 字段，等待 maintain spec 消费。
 - 若 `origin = query-writeback` 且 `trigger_source` 仍为 `system:query-writeback`：在 LOG 中记录 `SKIP: query gap not yet evidence-backed`，本次 compile 跳过该 proposal，不修改其 `compiled` 字段，等待补充真实来源。
 
+**CLI 辅助**：读取 proposal frontmatter 字段：
+```bash
+wiki-ops frontmatter get changes/approved/2026-04-08-create-transformer.md target_page
+wiki-ops frontmatter get changes/approved/2026-04-08-create-transformer.md action
+wiki-ops frontmatter get changes/approved/2026-04-08-create-transformer.md origin
+```
+
 **错误处理**：如果 `target_page` 对应的 canon 页不存在且 `action` 不是 `create`，则终止当前 proposal 的编译，在 LOG 中记录 `ERROR: target not found`，将 proposal 的 `compiled` 字段标记为 `error`，继续处理下一个。
 
 ---
 
-### Step 2：按 action 分支处理
+### Step 2 🧠：按 action 分支处理
 
 根据 `action` 字段路由到对应的合并策略（详见"增量合并策略"一节）：
 
@@ -90,7 +109,7 @@ canon/domains/{target_page}.md
 
 ---
 
-### Step 3：更新 canon 页 frontmatter
+### Step 3 ⚙️：更新 canon 页 frontmatter
 
 完成内容合并后，更新 canon 页的元数据字段：
 
@@ -117,9 +136,18 @@ compile 执行 `create` 或 `update` action 时，按以下优先级确定 confi
 
 注意：以上规则仅适用于 confidence 尚未被冲突检测规则覆盖的情况；冲突检测规则优先级更高。
 
+**CLI 执行**：更新 canon 页 frontmatter：
+```bash
+wiki-ops frontmatter set canon/domains/ai/architectures/transformer.md last_compiled "2026-04-08"
+wiki-ops frontmatter set canon/domains/ai/architectures/transformer.md last_updated "2026-04-08"
+wiki-ops frontmatter set canon/domains/ai/architectures/transformer.md staleness_days "0"
+wiki-ops frontmatter set canon/domains/ai/architectures/transformer.md confidence "medium"
+```
+> **LLM 职责**：确定 confidence 值（基于 source authority 和冲突检测规则），追加 sources 列表项。
+
 ---
 
-### Step 4：更新 cross_refs
+### Step 4 🧠⚙️：更新 cross_refs
 
 扫描更新后的 canon 页正文，识别所有 `[[slug]]` 格式的 wiki link，同步更新 frontmatter 中的 `cross_refs` 列表：
 
@@ -136,7 +164,7 @@ cross_refs:
 
 ---
 
-### Step 5：更新 MOC（_index.md）
+### Step 5 ⚙️：更新 MOC（_index.md）
 
 根据 action 对对应分类的 `_index.md` 进行修改：
 
@@ -175,9 +203,18 @@ pages:
 - [{domain}](domains/{domain}/_index.md) — {领域简述，取自 target_page 的 domain 字段}
 ```
 
+**CLI 执行**：
+```bash
+# 添加新页面到域索引
+wiki-ops update-index --domain ai --action add --slug transformer --title "Transformer 架构"
+
+# 若需创建新 canon 页
+wiki-ops create-canon --target-page "ai/architectures/transformer" --type concept --title "Transformer 架构" --sources "sources/articles/2026-04-08-attention-is-all-you-need.md"
+```
+
 ---
 
-### Step 6：归档 proposal
+### Step 6 ⚙️：归档 proposal
 
 编译完成后，对 proposal 文件执行归档操作：
 
@@ -188,9 +225,14 @@ pages:
    ```
 2. 文件保留在 `changes/approved/` 目录，不移动，以便审计追溯。
 
+**CLI 执行**：
+```bash
+wiki-ops mark-compiled changes/approved/2026-04-08-create-transformer.md
+```
+
 ---
 
-### Step 7：追加 LOG，更新 STATE.md
+### Step 7 ⚙️：追加 LOG，更新 STATE.md
 
 **追加编译日志**：在 `changes/LOG.md` 末尾追加一条记录，格式如下：
 
@@ -213,9 +255,16 @@ pending_proposals: <changes/inbox/ + changes/review/ 文件数之和>
 total_canon_pages: <pages/ 目录下非 archived 的 canon 页数量>
 ```
 
+**CLI 执行**：
+```bash
+wiki-ops append-log --spec compile \
+  --message "action: create | target: ai/architectures/transformer | sources_added: 1 | conflicts: 0 | result: success"
+wiki-ops update-state
+```
+
 ---
 
-### Step 8：触发 compile-后局部 lint
+### Step 8 ⚙️🧠：触发 compile-后局部 lint
 
 所有 proposal 编译完成后，自动触发一次局部 lint，范围为**本次编译涉及的页面及其 cross_refs 引用方**。
 
@@ -238,6 +287,12 @@ last_lint_score: <百分比>
 ```
 
 若 lint 发现 ERROR 级别问题，在 LOG 中标注 `[NEEDS_ATTENTION]`，提示维护者处理。
+
+**CLI 执行（结构性规则部分）**：
+```bash
+wiki-ops scan --format json
+```
+> **LLM 职责**：执行 L006 跨页矛盾检测（需语义理解）。
 
 ---
 
@@ -311,6 +366,12 @@ last_lint_score: <百分比>
 **衰减不适用于以下情况**：
 - 本次 compile 正在处理的目标页（由初始值规则和冲突检测规则控制）
 - `status: archived` 的页面
+
+**CLI 执行**：
+```bash
+wiki-ops decay
+```
+该命令自动扫描所有 canon 页，计算 effective_staleness_days，按规则降级 confidence，并在 LOG 中记录衰减条目。
 
 ---
 
