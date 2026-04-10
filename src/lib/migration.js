@@ -85,7 +85,12 @@ function computeRiskLevel(operationType, affectedPageCount) {
 }
 
 // Find all canon pages matching a filter spec.
-// filter: { domain?, collection?, subtype?, primary_type? }
+// filter: {
+//   domain?, collection?, subtype?, primary_type?,
+//   confidence?,         — match pages with this confidence level
+//   subtype_is_null?,    — when true, match pages with no subtype (unclassified)
+//   page_ids?,           — array of page_id strings for precise page selection
+// }
 function findMatchingPages(repoRoot, filter) {
   const db = openRuntimeIndex(repoRoot);
   const conditions = ["status != 'archived'"];
@@ -102,9 +107,21 @@ function findMatchingPages(repoRoot, filter) {
     conditions.push('subtype = ?');
     params.push(filter.subtype);
   }
+  if (filter.subtype_is_null === true) {
+    conditions.push("(subtype IS NULL OR subtype = '')");
+  }
   if (filter.primary_type) {
     conditions.push('primary_type = ?');
     params.push(filter.primary_type);
+  }
+  if (filter.confidence) {
+    conditions.push('confidence = ?');
+    params.push(filter.confidence);
+  }
+  if (Array.isArray(filter.page_ids) && filter.page_ids.length > 0) {
+    const placeholders = filter.page_ids.map(() => '?').join(', ');
+    conditions.push(`page_id IN (${placeholders})`);
+    params.push(...filter.page_ids);
   }
   const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
   return db.prepare(`SELECT path, title, domain, collection, subtype, primary_type, page_id FROM pages ${where}`).all(...params);
@@ -469,6 +486,14 @@ function applyMigrationPlan(repoRoot, planId, options = {}) {
     const newAbsolutePath = path.join(repoRoot, '.wiki', 'canon', 'domains', `${newRelPath}.md`);
 
     if (newAbsolutePath !== absolutePath) {
+      // Collision guard: refuse to overwrite an existing destination file.
+      // Without this check, fs.renameSync silently destroys the destination page.
+      if (fs.existsSync(newAbsolutePath)) {
+        throw new Error(
+          `reclassify collision: destination already exists: ${wikiRelative(repoRoot, newAbsolutePath)}. ` +
+          `Merge or rename the conflicting page before reclassifying.`
+        );
+      }
       fs.mkdirSync(path.dirname(newAbsolutePath), { recursive: true });
       fs.renameSync(absolutePath, newAbsolutePath);
       rollback.new_path = `canon/domains/${newRelPath}.md`;
@@ -627,6 +652,7 @@ module.exports = {
   applyMigrationPlan,
   createMigrationPlan,
   dryRunMigrationPlan,
+  findMatchingPages,
   listMigrationPlans,
   loadPlan,
   rollbackMigrationPlan,

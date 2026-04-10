@@ -249,7 +249,7 @@ test('deprecateTaxonomyItem: marks a domain as deprecated', (t) => {
   assert.equal(result.kind, 'domain');
   assert.equal(result.id, 'legacy-domain');
   assert.equal(result.status, 'deprecated');
-  assert.equal(result.replaced_by, 'engineering');
+  assert.deepEqual(result.replaced_by, ['engineering']);
 
   // Snapshot should reflect deprecated status
   const snapshot = getTaxonomySnapshot(repoPath);
@@ -283,7 +283,7 @@ test('validateClassification: detects deprecated domain', (t) => {
   assert.equal(result.issues.length, 1);
   assert.equal(result.issues[0].field, 'domain');
   assert.equal(result.issues[0].reason, 'deprecated');
-  assert.equal(result.issues[0].replaced_by, 'engineering');
+  assert.deepEqual(result.issues[0].replaced_by, ['engineering']);
 });
 
 test('validateClassification: detects unknown domain', (t) => {
@@ -473,4 +473,109 @@ test('updateFrontmatterFile: undefined value deletes key', (t) => {
   updateFm(fp, { merged_into: undefined });
   const fm2 = parseFrontmatterFile(fp).frontmatter;
   assert.ok(!('merged_into' in fm2), 'key should be absent after delete');
+});
+
+// ─── Regression tests for P0/P1/P2 fixes ───────────────────────────────────
+
+test('P0: reclassify throws on destination collision instead of silently overwriting', (t) => {
+  const repoPath = makeTempRepo(t);
+  registerDomain(repoPath, 'tech', { label: 'Technology' });
+  registerDomain(repoPath, 'ai', { label: 'AI' });
+
+  // Create source page
+  createCanon(repoPath, {
+    targetPage: 'tech/collision-candidate',
+    type: 'concept',
+    title: 'Collision Candidate',
+    sources: [],
+  });
+  // Create a page at the exact destination path so a collision will occur
+  createCanon(repoPath, {
+    targetPage: 'ai/collision-candidate',
+    type: 'concept',
+    title: 'AI Collision Candidate',
+    sources: [],
+  });
+
+  const plan = createMigrationPlan(repoPath, {
+    name: 'p0-collision-test',
+    operation_type: 'reclassify',
+    from: { domain: 'tech' },
+    to: { domain: 'ai' },
+    reason: 'Regression test for P0 collision guard',
+  });
+  dryRunMigrationPlan(repoPath, plan.plan_id);
+
+  // Applying should throw — NOT silently overwrite the destination
+  assert.throws(
+    () => applyMigrationPlan(repoPath, plan.plan_id),
+    /reclassify collision/,
+    'Expected collision error when destination already exists'
+  );
+
+  // Destination page must still have original content (was NOT overwritten)
+  const { frontmatter: destFm } = parseFrontmatterFile(
+    path.join(repoPath, '.wiki', 'canon', 'domains', 'ai', 'collision-candidate.md')
+  );
+  assert.equal(destFm.title, 'AI Collision Candidate', 'destination page should be unchanged');
+});
+
+test('P1: findMatchingPages supports subtype_is_null, confidence, and page_ids filters', (t) => {
+  const repoPath = makeTempRepo(t);
+  const { findMatchingPages } = require('../src/lib/migration');
+  registerDomain(repoPath, 'search', { label: 'Search' });
+
+  const pageWithSubtype = createCanon(repoPath, {
+    targetPage: 'search/subtype-page',
+    type: 'concept',
+    title: 'Subtype Page',
+    sources: [],
+    subtype: 'semantic',
+  });
+  const pageNoSubtype = createCanon(repoPath, {
+    targetPage: 'search/no-subtype-page',
+    type: 'concept',
+    title: 'No Subtype Page',
+    sources: [],
+  });
+
+  // subtype_is_null: true should match only pages with no subtype
+  const noSubtypeResults = findMatchingPages(repoPath, { domain: 'search', subtype_is_null: true });
+  const paths = noSubtypeResults.map((r) => r.path);
+  assert.ok(paths.some((p) => p.endsWith('no-subtype-page.md')), 'subtype_is_null filter should match unclassified page');
+  assert.ok(!paths.some((p) => p.endsWith('subtype-page.md') && !p.includes('no-subtype')), 'subtype_is_null filter should exclude pages with subtype');
+
+  // page_ids filter: exact page selection by page_id
+  const { frontmatter: fm1 } = parseFrontmatterFile(pageWithSubtype);
+  const byId = findMatchingPages(repoPath, { page_ids: [fm1.page_id] });
+  assert.equal(byId.length, 1, 'page_ids filter should return exactly 1 match');
+  assert.equal(byId[0].page_id, fm1.page_id, 'page_ids result should have matching page_id');
+
+  // empty page_ids array should not crash; returns full set (no page_id constraint)
+  const empty = findMatchingPages(repoPath, { page_ids: [] });
+  assert.ok(Array.isArray(empty), 'empty page_ids array should return array without crashing');
+});
+
+test('P2: deprecateTaxonomyItem stores replaced_by as array and supports 1:N splits', (t) => {
+  const repoPath = makeTempRepo(t);
+  registerDomain(repoPath, 'legacy', { label: 'Legacy' });
+  registerDomain(repoPath, 'new-a', { label: 'New A' });
+  registerDomain(repoPath, 'new-b', { label: 'New B' });
+
+  // Single replacement (string input) → still produces array
+  const single = deprecateTaxonomyItem(repoPath, 'domain', 'legacy', { replacedBy: 'new-a' });
+  assert.ok(Array.isArray(single.replaced_by), 'replaced_by should always be an array');
+  assert.deepEqual(single.replaced_by, ['new-a'], 'single string should produce 1-element array');
+
+  // Re-register legacy so we can test array input
+  registerDomain(repoPath, 'legacy2', { label: 'Legacy2' });
+  const multi = deprecateTaxonomyItem(repoPath, 'domain', 'legacy2', { replacedBy: ['new-a', 'new-b'] });
+  assert.ok(Array.isArray(multi.replaced_by), 'replaced_by should be array');
+  assert.deepEqual(multi.replaced_by, ['new-a', 'new-b'], '1:N split should preserve both targets');
+
+  // No replacement → empty array (not undefined/null)
+  registerDomain(repoPath, 'legacy3', { label: 'Legacy3' });
+  const none = deprecateTaxonomyItem(repoPath, 'domain', 'legacy3');
+  assert.ok(Array.isArray(none.replaced_by), 'replaced_by should be array even with no replacement');
+  assert.equal(none.replaced_by.length, 0, 'no replacement → empty array');
 });

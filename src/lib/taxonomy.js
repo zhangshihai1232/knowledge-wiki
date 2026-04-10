@@ -324,11 +324,19 @@ function registerSubtype(repoRoot, value, options = {}) {
 }
 
 // Deprecate a taxonomy item (domain, primary_type, or subtype) by setting status='deprecated'.
-// Optionally supply replacedBy to record a canonical replacement.
+// replacedBy: string or string[] — supports 1:N domain splits (e.g. one domain → two new domains).
 function deprecateTaxonomyItem(repoRoot, kind, id, options = {}) {
   const taxonomy = loadTaxonomy(repoRoot);
   const normalizedId = normalizeRegistryId(id);
-  const replacedBy = normalizeValue(options.replacedBy || options.replaced_by) || null;
+
+  // replaced_by is stored as an array to support 1:N splits.
+  // Accept both string ('a') and array (['a','b']) inputs.
+  const rawReplacedBy = options.replacedBy || options.replaced_by;
+  const replacedBy = Array.isArray(rawReplacedBy)
+    ? rawReplacedBy.map(normalizeValue).filter(Boolean)
+    : normalizeValue(rawReplacedBy)
+      ? [normalizeValue(rawReplacedBy)]
+      : [];
 
   let registryKey, registryFile;
   if (kind === 'domain') {
@@ -351,9 +359,7 @@ function deprecateTaxonomyItem(repoRoot, kind, id, options = {}) {
   }
   item.status = 'deprecated';
   item.deprecated_at = new Date().toISOString();
-  if (replacedBy) {
-    item.replaced_by = replacedBy;
-  }
+  item.replaced_by = replacedBy.length ? replacedBy : undefined;
   writeJsonFile(getRegistryPath(repoRoot, registryFile), taxonomy[registryKey]);
   return { kind, id: normalizedId, status: 'deprecated', replaced_by: replacedBy };
 }
