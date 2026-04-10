@@ -131,6 +131,8 @@ function ensureDatabase(repoRoot) {
   ensureTableColumn(db, 'pages', 'page_id', 'TEXT');
   ensureTableColumn(db, 'pages', 'collection', 'TEXT');
   ensureTableColumn(db, 'pages', 'secondary_domains_json', 'TEXT');
+  // Enforce page_id uniqueness (NULLs exempt — pre-identity pages are allowed)
+  db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_pages_page_id ON pages (page_id) WHERE page_id IS NOT NULL');
   ensureTableColumn(db, 'sources', 'primary_type', 'TEXT');
   ensureTableColumn(db, 'sources', 'subtype', 'TEXT');
   ensureTableColumn(db, 'sources', 'tags_json', 'TEXT');

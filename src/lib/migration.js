@@ -5,6 +5,7 @@ const path = require('path');
 const { parseFrontmatterFile, updateFrontmatterFile } = require('./frontmatter');
 const { openRuntimeIndex, syncRuntimeFiles } = require('./runtime-index');
 const { recordPathAlias, recordTaxonomyAlias } = require('./alias');
+const { deprecateTaxonomyItem } = require('./taxonomy');
 const { listMarkdownFiles, normalizePath } = require('./utils');
 
 const MIGRATIONS_DIR = 'migrations';
@@ -86,7 +87,9 @@ function computeRiskLevel(operationType, affectedPageCount) {
 
 // Find all canon pages matching a filter spec.
 // filter: {
-//   domain?, collection?, subtype?, primary_type?,
+//   domain?,             — match primary domain
+//   include_secondary?,  — when true, also match pages listing domain in secondary_domains_json
+//   collection?, subtype?, primary_type?,
 //   confidence?,         — match pages with this confidence level
 //   subtype_is_null?,    — when true, match pages with no subtype (unclassified)
 //   page_ids?,           — array of page_id strings for precise page selection
@@ -96,8 +99,14 @@ function findMatchingPages(repoRoot, filter) {
   const conditions = ["status != 'archived'"];
   const params = [];
   if (filter.domain) {
-    conditions.push('domain = ?');
-    params.push(filter.domain);
+    if (filter.include_secondary) {
+      // Match primary domain OR secondary_domains_json contains the domain value
+      conditions.push("(domain = ? OR secondary_domains_json LIKE ?)");
+      params.push(filter.domain, `%"${filter.domain}"%`);
+    } else {
+      conditions.push('domain = ?');
+      params.push(filter.domain);
+    }
   }
   if (filter.collection) {
     conditions.push('collection = ?');
@@ -124,7 +133,7 @@ function findMatchingPages(repoRoot, filter) {
     params.push(...filter.page_ids);
   }
   const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
-  return db.prepare(`SELECT path, title, domain, collection, subtype, primary_type, page_id FROM pages ${where}`).all(...params);
+  return db.prepare(`SELECT path, title, domain, collection, subtype, primary_type, page_id, secondary_domains_json FROM pages ${where}`).all(...params);
 }
 
 // Create a new migration plan (does NOT execute anything).
@@ -516,6 +525,13 @@ function applyMigrationPlan(repoRoot, planId, options = {}) {
   }
   if (plan.operation_type === 'merge-subtype' && plan.from.subtype && plan.to.subtype) {
     recordTaxonomyAlias(repoRoot, 'subtype', plan.from.subtype, plan.to.subtype);
+    // Deprecate the merged-away subtype if it exists in the registry (graceful if not registered)
+    try {
+      deprecateTaxonomyItem(repoRoot, 'subtype', plan.from.subtype, { replaced_by: plan.to.subtype });
+    } catch (e) {
+      if (!e.message.includes('not found in registry')) throw e;
+      // Subtype was used in page frontmatter but not formally registered — alias is sufficient
+    }
   }
 
   // Write migration log

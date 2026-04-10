@@ -31,6 +31,7 @@ const {
   deprecateTaxonomyItem,
   validateClassification,
   registerDomain,
+  registerSubtype,
   getTaxonomySnapshot,
 } = require('../src/lib/taxonomy');
 
@@ -668,4 +669,96 @@ test('Fix3: wiki internal scan --rule filters findings to a single rule', (t) =>
   const l001Output = runInternalCommand(repoPath, ['scan', '--rule', 'L001', '--format', 'json']);
   const l001Findings = JSON.parse(l001Output).findings;
   assert.ok(l001Findings.every((f) => f.rule === 'L001'), 'all --rule L001 findings should be L001');
+});
+
+test('Fix4: page_id UNIQUE index prevents duplicate page_ids', (t) => {
+  const repoPath = makeTempRepo(t);
+  registerDomain(repoPath, 'dedup-test', { label: 'Dedup Test' });
+
+  createCanon(repoPath, {
+    targetPage: 'dedup-test/page-one',
+    type: 'concept', title: 'Page One', sources: [],
+    pageId: 'pg_unique_123',
+  });
+
+  // Attempting to create a second page with the same page_id should fail
+  assert.throws(
+    () => createCanon(repoPath, {
+      targetPage: 'dedup-test/page-two',
+      type: 'concept', title: 'Page Two', sources: [],
+      pageId: 'pg_unique_123',
+    }),
+    /UNIQUE constraint failed|unique/i,
+    'duplicate page_id should throw a UNIQUE constraint error'
+  );
+
+  // A different page_id should succeed
+  assert.doesNotThrow(
+    () => createCanon(repoPath, {
+      targetPage: 'dedup-test/page-two',
+      type: 'concept', title: 'Page Two', sources: [],
+      pageId: 'pg_unique_456',
+    }),
+    'distinct page_id should not throw'
+  );
+});
+
+test('Fix5: merge-subtype apply also deprecates source subtype in taxonomy', (t) => {
+  const repoPath = makeTempRepo(t);
+  registerDomain(repoPath, 'merge-st-test', { label: 'Merge Subtype Test' });
+  // Register both subtypes so deprecation can be verified
+  registerSubtype(repoPath, 'writing', { domain: 'merge-st-test' });
+  registerSubtype(repoPath, 'content', { domain: 'merge-st-test' });
+
+  createCanon(repoPath, {
+    targetPage: 'merge-st-test/writing/article-a',
+    type: 'concept', title: 'Article A', sources: [],
+    subtype: 'writing',
+  });
+
+  // Build plan to merge subtype writing -> content
+  const plan = createMigrationPlan(repoPath, {
+    operation_type: 'merge-subtype',
+    scope: 'writing → content',
+    from: { domain: 'merge-st-test', subtype: 'writing' },
+    to: { subtype: 'content' },
+    reason: 'consolidation test',
+  });
+
+  dryRunMigrationPlan(repoPath, plan.plan_id);
+  applyMigrationPlan(repoPath, plan.plan_id);
+
+  // After apply, old subtype should be deprecated
+  const taxonomy = getTaxonomySnapshot(repoPath);
+  const deprecated = taxonomy.subtypes.find(s => s.id === 'writing' && s.status === 'deprecated');
+  assert.ok(deprecated, 'subtype "writing" should be marked deprecated after merge-subtype apply');
+  assert.deepEqual(deprecated.replaced_by, ['content'], 'replaced_by should point to merged-into subtype');
+});
+
+test('Fix6: findMatchingPages with include_secondary finds cross-domain pages', (t) => {
+  const repoPath = makeTempRepo(t);
+  registerDomain(repoPath, 'primary-domain', { label: 'Primary Domain' });
+  registerDomain(repoPath, 'secondary-domain', { label: 'Secondary Domain' });
+
+  const { findMatchingPages } = require('../src/lib/migration');
+
+  // Create page in primary-domain, then patch its secondary_domains_json in the DB
+  createCanon(repoPath, {
+    targetPage: 'primary-domain/cross-domain-page',
+    type: 'concept', title: 'Cross Domain Page', sources: [],
+  });
+  // Directly update DB to set secondary_domains_json (simulates what wiki govern / maintain would do)
+  const db = openRuntimeIndex(repoPath);
+  db.prepare("UPDATE pages SET secondary_domains_json = ? WHERE path LIKE '%cross-domain-page%'")
+    .run(JSON.stringify(['secondary-domain']));
+
+  // Without include_secondary, searching secondary-domain should NOT find this page
+  const withoutFlag = findMatchingPages(repoPath, { domain: 'secondary-domain' });
+  assert.ok(!withoutFlag.some(p => p.path.includes('cross-domain-page')),
+    'without include_secondary, page in primary-domain should not appear in secondary-domain results');
+
+  // With include_secondary: true, it SHOULD appear
+  const withFlag = findMatchingPages(repoPath, { domain: 'secondary-domain', include_secondary: true });
+  assert.ok(withFlag.some(p => p.path.includes('cross-domain-page')),
+    'with include_secondary: true, cross-domain page should be included in results');
 });
