@@ -73,7 +73,14 @@ quality_gates:
 wiki ask "{用户问题}" --json
 ```
 
-先读取 `wiki ask` 返回的候选 `pages / proposals / sources`，并结合 `retrieval.strategy / retrieval.tokens` 判断命中质量，再回到下面的层级结构做二次确认与阅读。只有当运行态索引结果明显不足时，才退回到 `_index.md` 的全量导航。
+先读取 `wiki ask` 返回的候选 `pages / proposals / sources`，并结合 `retrieval.strategy / retrieval.tokens / retrieval.classification` 判断命中质量，再回到下面的层级结构做二次确认与阅读。只有当运行态索引结果明显不足时，才退回到 `_index.md` 的全量导航。
+
+当前推荐的轻量检索路径是：
+
+1. 先对 query 做粗分类，得到 `domain_hints / primary_type_hints / subtype_hints`
+2. 用这些稳定字段对运行态索引做范围收窄
+3. 在缩小后的候选集中做 title / slug / path / tags / content 的词面排序
+4. 只对 top-k 候选做后续阅读与回答组织
 
 按照以下层级导航结构，定位与问题相关的 canon 页面：
 

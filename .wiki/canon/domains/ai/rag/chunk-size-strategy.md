@@ -1,18 +1,26 @@
 ---
 type: guide
 title: "RAG Chunk Size 选择策略"
-domain: "ai"
+domain: ai
 sources:
   - sources/conversations/2026-04-08-rag-chunk-size-best-practice-debate.md
 confidence: low
-last_compiled: "2026-04-08"
-last_updated: "2026-04-08"
+last_compiled: 2026-04-08
+last_updated: 2026-04-08
 staleness_days: 0
 cross_refs:
   - vector-db-comparison
   - finetuning-vs-rag
 status: active
-tags: [rag, chunk-size, retrieval, embedding, context-window, pipeline]
+tags:
+  - rag
+  - chunk-size
+  - retrieval
+  - embedding
+  - context-window
+  - pipeline
+primary_type: guide
+subtype: workflow
 ---
 
 ## 前提条件

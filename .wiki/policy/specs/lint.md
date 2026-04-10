@@ -263,7 +263,7 @@ wiki internal consecutive-approve-count
 **CLI 执行（L001 自动修复）**：
 
 ```bash
-wiki internal update-index --domain ai --action add --slug chain-of-thought --title "Chain-of-Thought Prompting"
+wiki internal update-index --domain ai --sync
 ```
 
 - **L009 自动修复**：在缺失 `_index.md` 的目录下创建最小化索引文件，内容模板：

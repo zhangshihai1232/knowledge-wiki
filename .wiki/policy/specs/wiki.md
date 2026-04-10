@@ -152,10 +152,11 @@ quality_gates:
 
 推荐的运行态协作 contract：
 
-- `answer/query` 路由：先调用 `wiki ask "{query}" --json` 缩小候选上下文，再做语义综合；优先消费其 `contract_version / retrieval / pages / proposals / sources` 结构
+- `answer/query` 路由：先调用 `wiki ask "{query}" --json` 做轻量分类（`domain / primary_type / subtype`）并缩小候选上下文，再做语义综合；优先消费其 `contract_version / retrieval / pages / proposals / sources` 结构
 - `absorb/ingest` 路由：由 LLM 先生成结构化 payload，再调用 `wiki import --input payload.json --json`，让 runtime 一次性完成 source / proposal / claims / extracted / dedup evidence 收尾；批处理场景可用 `--input -` 从 stdin 读入
 - `organize/maintain` 路由：优先调用 `wiki maintain --json` 获取统计、结构发现与衰减建议
-- 队列收尾仍使用：`wiki review / wiki apply / wiki resolve`；agent 优先消费它们的 `--json` 输出，而不是表格文本
+- 分类治理使用：`wiki taxonomy suggestions / wiki taxonomy accept / wiki taxonomy reject`，用于显式吸收 registry 候选值
+- 队列收尾仍使用：`wiki review / wiki apply / wiki resolve`；其中 agent 读取队列时优先消费 `wiki review --json / wiki apply list --json / wiki resolve --json`，避免解析表格文本
 
 5. 是否生成“后台摘要”的判定
 6. 是否追加“audit 视图”的判定

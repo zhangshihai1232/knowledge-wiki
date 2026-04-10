@@ -1,0 +1,35 @@
+{
+  "version": "1.0",
+  "items": [
+    {
+      "id": "concept",
+      "aliases": ["什么是", "定义", "概念", "principle"],
+      "status": "active"
+    },
+    {
+      "id": "entity",
+      "aliases": ["对象", "组件", "tool", "service"],
+      "status": "active"
+    },
+    {
+      "id": "comparison",
+      "aliases": ["对比", "比较", "区别", "vs"],
+      "status": "active"
+    },
+    {
+      "id": "guide",
+      "aliases": ["如何", "怎么", "步骤", "指南", "playbook"],
+      "status": "active"
+    },
+    {
+      "id": "decision",
+      "aliases": ["决策", "选型", "should", "是否"],
+      "status": "active"
+    },
+    {
+      "id": "source",
+      "aliases": ["来源", "原文", "依据", "source", "evidence"],
+      "status": "active"
+    }
+  ]
+}

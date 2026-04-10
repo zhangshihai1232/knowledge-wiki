@@ -10,4 +10,4 @@ if ! command -v node >/dev/null 2>&1; then
   exit 1
 fi
 
-exec node --no-warnings "${REPO_ROOT}/src/bootstrap-cli.js" "$@"
+exec node "${REPO_ROOT}/src/bootstrap-cli.js" "$@"

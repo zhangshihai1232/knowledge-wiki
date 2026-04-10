@@ -3,7 +3,7 @@ type: rubric
 name: query-judging-rubric
 version: 1.2
 created_at: 2026-04-09
-supersedes: evaluation/benchmark/fixtures/templates/query-judging-rubric-v1.1.md
+supersedes: final
 ---
 
 # Query Judging Rubric v1.2

@@ -1,18 +1,26 @@
 ---
 type: decision
 title: "LLM 微调 vs RAG 选择决策框架"
-domain: "ai"
+domain: ai
 sources:
   - sources/notes/2026-04-08-llm-finetuning-vs-rag-decision-criteria.md
 confidence: low
-last_compiled: "2026-04-08"
-last_updated: "2026-04-08"
+last_compiled: 2026-04-08
+last_updated: 2026-04-08
 staleness_days: 0
 cross_refs:
   - chunk-size-strategy
   - vector-db-comparison
 status: active
-tags: [llm, fine-tuning, rag, decision-framework, knowledge-injection, lora]
+tags:
+  - llm
+  - fine-tuning
+  - rag
+  - decision-framework
+  - knowledge-injection
+  - lora
+primary_type: decision
+subtype: policy
 ---
 
 > ⚠️ **可信度说明**：本页面基于个人实践笔记编译（authority: unverified），部分内容来源未经验证（标注 ⚠️ 处）。confidence 为 low，待后续补充权威来源后升级。

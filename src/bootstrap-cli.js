@@ -1,6 +1,7 @@
 'use strict';
 
 const path = require('path');
+const { assertSupportedNode } = require('./lib/runtime-requirements');
 const {
   DEFAULT_CONFIG_PATH,
   ensureConfigFile,
@@ -11,6 +12,8 @@ const {
 const { listNamespaces, printNamespaceStatus, scaffoldRepo } = require('./lib/bootstrap');
 
 const COMMAND_NAME = process.env.BOOTSTRAP_COMMAND_NAME || path.basename(process.argv[1] || 'bootstrap-wiki-repo.sh');
+
+assertSupportedNode(COMMAND_NAME);
 
 function die(message) {
   console.error(`Error: ${message}`);

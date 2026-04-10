@@ -1,17 +1,26 @@
 ---
 type: comparison
 title: "向量数据库选型对比：Pinecone vs Weaviate vs Milvus"
-domain: "ai"
+domain: ai
 sources:
   - sources/articles/2026-04-08-vector-db-comparison-pinecone-weaviate-milvus.md
 confidence: low
-last_compiled: "2026-04-08"
-last_updated: "2026-04-08"
+last_compiled: 2026-04-08
+last_updated: 2026-04-08
 staleness_days: 0
 cross_refs:
   - chunk-size-strategy
 status: active
-tags: [vector-database, pinecone, weaviate, milvus, similarity-search, rag, databases]
+tags:
+  - vector-database
+  - pinecone
+  - weaviate
+  - milvus
+  - similarity-search
+  - rag
+  - databases
+primary_type: comparison
+subtype: tool
 ---
 
 ## 对比维度

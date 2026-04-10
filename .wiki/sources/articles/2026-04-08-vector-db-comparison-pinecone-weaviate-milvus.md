@@ -4,12 +4,20 @@ source_kind: article
 title: "向量数据库选型对比：Pinecone vs Weaviate vs Milvus"
 url: ~
 author: "技术评估团队"
-published_at: "2026-03-15"
-ingested_at: "2026-04-08"
-domain: "ai"
-tags: [vector-database, pinecone, weaviate, milvus, similarity-search, rag]
+published_at: 2026-03-15
+ingested_at: 2026-04-08
+domain: ai
+tags:
+  - vector-database
+  - pinecone
+  - weaviate
+  - milvus
+  - similarity-search
+  - rag
 extracted: true
 authority: secondary
+primary_type: source
+subtype: tool
 ---
 
 ## 原始内容

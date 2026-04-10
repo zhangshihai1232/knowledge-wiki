@@ -5,11 +5,17 @@ title: "LLM 微调 vs RAG 的选择标准（个人笔记）"
 url: ~
 author: "个人整理"
 published_at: ~
-ingested_at: "2026-04-08"
-domain: "ai"
-tags: [llm, fine-tuning, rag, decision-framework, knowledge-injection]
+ingested_at: 2026-04-08
+domain: ai
+tags:
+  - llm
+  - fine-tuning
+  - rag
+  - decision-framework
+  - knowledge-injection
 extracted: true
 authority: unverified
+primary_type: source
 ---
 
 ## 原始内容

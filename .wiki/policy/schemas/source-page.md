@@ -20,7 +20,12 @@ author: "作者"                      # 可选
 published_at: "2026-01-01"          # 可选，原始发布时间
 ingested_at: "2026-04-08"           # 必填，摄入时间（ISO 8601 日期）
 domain: "ai"                        # 可选，预判归属领域
+primary_type: source                # 建议固定为 source，供检索收窄使用
+subtype: meeting-note               # 可选，半稳定子类型；未注册值进入 suggestion queue
 tags: [tag1, tag2]                  # 可选，关键词标签
+suggested_tags: [tag3]              # 可选，AI 建议但未吸收进稳定分类
+suggested_aliases: ["rag chunking"] # 可选，AI 发现的候选别名
+suggested_related_terms: [retrieval] # 可选，AI 建议的相关术语
 extracted: false                    # 必填，是否已提取声明并生成 proposal
 checksum: "sha256:abc123"           # 可选，内容哈希，用于去重检测
 authority: secondary                # 可选，来源权威性：authoritative | secondary | unverified
@@ -39,7 +44,10 @@ authority: secondary                # 可选，来源权威性：authoritative |
 | published_at | 否 | 原始发布日期 |
 | ingested_at | 是 | 摄入系统的日期 |
 | domain | 否 | 预判所属知识领域 |
+| primary_type | 建议 | 轻量稳定分类骨架的一部分；source 默认写 `source` |
+| subtype | 否 | 半稳定子类型，命中 registry 时直接使用；未命中时进入 taxonomy suggestion queue，等待显式吸收 |
 | tags | 否 | 关键词列表，辅助检索 |
+| suggested_tags / suggested_aliases / suggested_related_terms | 否 | AI 的候选发现层，不直接改写正式 registry，只进入待审 suggestion queue |
 | extracted | 是 | `false` = 尚未提取声明；`true` = 已生成 proposal |
 | checksum | 否 | 内容 SHA-256 哈希，用于检测重复摄入 |
 | authority | 否 | 来源权威性：`authoritative`（权威来源，如官方文档、同行评审论文）/ `secondary`（二手资料，如博客、综述）/ `unverified`（来源不明或未经验证）。缺失时视为 `secondary`。compile spec 使用此字段确定 confidence 初始值 |
@@ -70,3 +78,10 @@ authority: secondary                # 可选，来源权威性：authoritative |
 - 声明1 [段落引用]
 - 声明2 [段落引用]
 ```
+
+## 相关治理文件
+
+- `.wiki/policy/registry/domains.json`
+- `.wiki/policy/registry/primary-types.json`
+- `.wiki/policy/registry/subtypes.json`
+- `.wiki/policy/registry/suggestions.json`

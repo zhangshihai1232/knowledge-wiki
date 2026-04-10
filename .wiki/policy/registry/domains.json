@@ -1,0 +1,25 @@
+{
+  "version": "1.0",
+  "items": [
+    {
+      "id": "ai",
+      "aliases": ["llm", "rag", "agent"],
+      "status": "active"
+    },
+    {
+      "id": "product",
+      "aliases": ["pm", "prd"],
+      "status": "active"
+    },
+    {
+      "id": "engineering",
+      "aliases": ["eng", "system"],
+      "status": "active"
+    },
+    {
+      "id": "operations",
+      "aliases": ["ops", "runbook"],
+      "status": "active"
+    }
+  ]
+}

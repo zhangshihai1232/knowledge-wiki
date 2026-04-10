@@ -94,6 +94,8 @@ ingest 是知识进入系统的**唯一入口**。所有外部资料必须经过
 - 正文 `## 原始内容` 下保留资料原文，**不改写、不摘要、不润色**
 - 若资料有 URL，必须填写 `url` 字段
 - `ingested_at` 填写当前日期
+- 若能判断，优先补齐轻量分类字段：`domain / primary_type / subtype / tags`
+- 若发现合理但未被 registry 接收的候选分类，不要直接发明正式枚举；写入 `suggested_tags / suggested_aliases / suggested_related_terms`，由 taxonomy queue 承接
 
 推荐做法是让 LLM 只生成 payload，再调用：
 
@@ -104,7 +106,16 @@ wiki import --input ingest-payload.json --json
 该 contract 适合 agent：LLM 只生成结构化 payload，不再拼接多条原子命令。
 
 > **LLM 职责**：判断 `source.kind`、生成 source/proposal 的语义内容。  
-> **runtime 职责**：文件名生成、frontmatter 填充、source/proposal 落盘、去重检查、状态/日志更新。
+> **runtime 职责**：文件名生成、frontmatter 填充、source/proposal 落盘、去重检查、taxonomy suggestion 记录、状态/日志更新。
+
+推荐的 payload 最小分类约定：
+
+- `source.domain`：大领域，如 `ai / product / engineering / operations`
+- `source.primary_type`：对 source 建议固定为 `source`
+- `source.subtype`：半稳定子类型，如 `meeting-note / tool / workflow`
+- `proposal.primary_type`：目标知识主类型，通常与 `target_type` 一致
+- `proposal.subtype`：半稳定子类型
+- `suggested_*`：AI 发现层，只进入 suggestion queue，不直接升级为正式 registry
 
 ---
 
@@ -204,6 +215,14 @@ action: create
 status: inbox
 target_page: "ai/architectures/transformer"
 target_type: concept
+domain: ai
+primary_type: concept
+subtype: architecture
+tags:
+  - transformer
+  - attention
+suggested_tags:
+  - seq2seq
 trigger_source: "sources/articles/2026-04-08-attention-is-all-you-need.md"
 confidence: medium
 proposed_at: "2026-04-08"
@@ -358,6 +377,8 @@ wiki internal create-source \
   --kind article \
   --title "Attention Is All You Need" \
   --domain ai \
+  --primary-type source \
+  --subtype meeting-note \
   --url "https://arxiv.org/abs/1706.03762" \
   --author "Vaswani et al." \
   --published-at "2017-06-12" \
@@ -381,6 +402,9 @@ wiki internal create-proposal \
   --action create \
   --target-page "ai/architectures/transformer" \
   --target-type concept \
+  --domain ai \
+  --primary-type concept \
+  --subtype architecture \
   --trigger-source "sources/articles/2026-04-08-attention-is-all-you-need.md" \
   --confidence medium \
   --body-file /tmp/proposal-body.md

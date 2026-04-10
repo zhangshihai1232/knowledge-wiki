@@ -35,8 +35,8 @@ updated_at: "2026-04-08"            # 每次有新领域加入时更新
 ## 使用说明
 
 - 每个领域有独立的 `domains/{domain}/_index.md`
-- 通过 `/wiki-query` 查询知识
-- 通过 `/wiki-ingest` 摄入新资料
+- 通过 `/wiki` 使用知识前台入口
+- 通过 `wiki check / review / apply / resolve` 处理确定性队列
 ```
 
 ### 更新规则
@@ -101,7 +101,7 @@ pages:                              # 必填，本领域所有 canon 页面的 s
 |------|--------|----------|
 | create | compile Step 5 | `pages` 列表追加新 slug；正文对应分类区块追加条目；若分类不存在则新建 `## {category}` 区块 |
 | archive | compile Step 5 | `pages` 列表移除该 slug；正文移除对应条目 |
-| update/merge/split | compile Step 5 | 若 slug 或 title 变化则同步更新；否则不改动 |
+| update | compile Step 5 | 若页面 title 变化则同步更新；否则不改动 |
 | L001 自动修复 | lint Step 5 | 将孤儿页面追加到 `pages` 列表和正文末尾的 `## 其他` 区块 |
 | L009 自动创建 | lint Step 5 | 领域目录缺少 `_index.md` 时，自动创建最小化版本（扫描目录下现有页面填充 `pages`） |
 

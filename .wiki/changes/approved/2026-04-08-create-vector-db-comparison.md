@@ -2,19 +2,30 @@
 type: change-proposal
 action: create
 status: approved
-target_page: "ai/databases/vector-db-comparison"
+target_page: ai/databases/vector-db-comparison
 target_type: comparison
-trigger_source: "sources/articles/2026-04-08-vector-db-comparison-pinecone-weaviate-milvus.md"
+trigger_source: sources/articles/2026-04-08-vector-db-comparison-pinecone-weaviate-milvus.md
 confidence: medium
-proposed_at: "2026-04-08"
-reviewed_by: "test-evaluator"
+proposed_at: 2026-04-08
+reviewed_by: test-evaluator
 reviewed_at: "2026-04-08T10:00:00+08:00"
 rejection_reason: ~
 approve_note: "技术数据有来源，声明准确"
 compiled: true
-compiled_at: "2026-04-08"
+compiled_at: 2026-04-08
 auto_quality_score: 0.82
 conflict_location: ~
+domain: ai
+primary_type: comparison
+subtype: tool
+tags:
+  - vector-database
+  - pinecone
+  - weaviate
+  - milvus
+  - similarity-search
+  - rag
+  - databases
 ---
 
 ## 提案摘要

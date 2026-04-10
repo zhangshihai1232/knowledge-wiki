@@ -2,19 +2,29 @@
 type: change-proposal
 action: create
 status: approved
-target_page: "ai/rag/chunk-size-strategy"
+target_page: ai/rag/chunk-size-strategy
 target_type: guide
-trigger_source: "sources/conversations/2026-04-08-rag-chunk-size-best-practice-debate.md"
+trigger_source: sources/conversations/2026-04-08-rag-chunk-size-best-practice-debate.md
 confidence: medium
-proposed_at: "2026-04-08"
-reviewed_by: "test-evaluator"
+proposed_at: 2026-04-08
+reviewed_by: test-evaluator
 reviewed_at: "2026-04-08T10:10:00+08:00"
 rejection_reason: ~
 approve_note: "冲突点已被识别：Alice（512最优，客服场景MRR@5=0.73）与Bob（1024最优，TechDocs NDCG@10=0.52）的实验数据分歧已在提案中正确标注为⚠️冲突，双方数据均保留，来源可追溯"
 compiled: true
-compiled_at: "2026-04-08"
+compiled_at: 2026-04-08
 auto_quality_score: 0.80
 conflict_location: ~
+domain: ai
+primary_type: guide
+subtype: workflow
+tags:
+  - rag
+  - chunk-size
+  - retrieval
+  - embedding
+  - context-window
+  - pipeline
 ---
 
 ## 提案摘要

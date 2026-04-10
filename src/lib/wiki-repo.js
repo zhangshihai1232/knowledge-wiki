@@ -4,6 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const { parseFrontmatterFile, updateFrontmatterFile, replaceConflictBlock } = require('./frontmatter');
 const { openRuntimeIndex, recordOperation, rebuildRuntimeIndex, syncRuntimeFiles, wikiRelative } = require('./runtime-index');
+const { getTaxonomySnapshot } = require('./taxonomy');
 const { normalizePath, listMarkdownFiles } = require('./utils');
 
 function repoRelative(repoRoot, absolutePath) {
@@ -90,11 +91,15 @@ function appendLog(repoRoot, target, spec, message, extraFields = []) {
 function updateState(repoRoot, overrides = {}) {
   const stateFile = path.join(repoRoot, '.wiki', 'policy', 'STATE.md');
   const db = openRuntimeIndex(repoRoot);
+  const taxonomy = getTaxonomySnapshot(repoRoot);
   const summary = {
     total_sources: db.prepare('SELECT COUNT(*) AS count FROM sources').get().count,
     total_canon_pages: db.prepare('SELECT COUNT(*) AS count FROM pages WHERE status != ?').get('archived').count,
-    total_domains: db.prepare('SELECT COUNT(DISTINCT domain) AS count FROM pages').get().count,
+    total_domains: db
+      .prepare("SELECT COUNT(DISTINCT domain) AS count FROM pages WHERE status != 'archived' AND COALESCE(domain, '') != ''")
+      .get().count,
     pending_proposals: db.prepare('SELECT COUNT(*) AS count FROM proposals WHERE status IN (?, ?)').get('inbox', 'review').count,
+    pending_taxonomy_suggestions: taxonomy.pending_suggestions,
     last_promote_at: overrides.last_promote_at,
     last_compile: overrides.last_compile,
     last_lint: overrides.last_lint,
@@ -115,6 +120,7 @@ function updateState(repoRoot, overrides = {}) {
   replaceBullet('total_canon_pages', summary.total_canon_pages);
   replaceBullet('total_domains', summary.total_domains);
   replaceBullet('pending_proposals', summary.pending_proposals);
+  replaceBullet('pending_taxonomy_suggestions', summary.pending_taxonomy_suggestions);
   if (summary.last_promote_at) {
     replaceBullet('last_promote_at', summary.last_promote_at);
   }
@@ -308,6 +314,13 @@ function applyReviewDecision(repoRoot, decision, proposalInput, options) {
   const updates = {};
 
   if (decision === 'approve') {
+    const trimmedNote = String(options.note || '').trim();
+    if (trimmedNote.length < 20) {
+      throw new Error('review approve requires a meaningful --note of at least 20 characters');
+    }
+  }
+
+  if (decision === 'approve') {
     updates.status = 'approved';
     updates.reviewed_by = options.reviewedBy;
     updates.reviewed_at = options.reviewedAt || now;
@@ -350,27 +363,6 @@ function applyReviewDecision(repoRoot, decision, proposalInput, options) {
   const db = openRuntimeIndex(repoRoot);
   recordOperation(db, 'review.apply', 'ok', { decision, proposal: wikiRelative(repoRoot, destinationPath) });
   return destinationPath;
-}
-
-function markApplyDone(repoRoot, proposalInput, options) {
-  const proposalPath = findNamedFile(repoRoot, proposalInput, ['approved']);
-  const proposal = parseFrontmatterFile(proposalPath).frontmatter;
-  const updates =
-    options.result === 'error'
-      ? { compiled: 'error', compiled_at: formatDate() }
-      : { compiled: true, compiled_at: formatDate() };
-  updateFrontmatterFile(proposalPath, updates);
-  syncRuntimeFiles(repoRoot, [proposalPath]);
-  appendLog(
-    repoRoot,
-    'changes',
-    'apply',
-    `action: ${proposal.action || '~'} | target: ${proposal.target_page || '~'} | result: ${options.result} | sources_added: ${options.sourcesAdded} | cross_refs_updated: ${options.refsUpdated} | conflicts: ${options.conflicts}`
-  );
-  updateState(repoRoot, { last_compile: formatDate() });
-  const db = openRuntimeIndex(repoRoot);
-  recordOperation(db, 'apply.done', 'ok', { proposal: wikiRelative(repoRoot, proposalPath), result: options.result });
-  return proposalPath;
 }
 
 function applyResolve(repoRoot, proposalInput, options) {
@@ -430,7 +422,6 @@ module.exports = {
   formatTimestamp,
   getConflictRows,
   getProposalRows,
-  markApplyDone,
   repoRelative,
   resolveUserFile,
   updateState,

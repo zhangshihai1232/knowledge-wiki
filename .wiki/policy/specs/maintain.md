@@ -308,7 +308,7 @@ wiki internal frontmatter set canon/domains/legacy-tools/tool-A.md status "archi
 wiki internal frontmatter set canon/domains/legacy-tools/tool-A.md archived_at "2026-04-09"
 
 # MOC 重组：从索引移除归档页面
-wiki internal update-index --domain legacy-tools --action remove --slug tool-A
+wiki internal update-index --domain legacy-tools --sync
 
 # 标记治理提案为已消费
 wiki internal mark-compiled changes/approved/2026-04-08-maintain-staleness-refresh.md

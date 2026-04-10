@@ -81,10 +81,12 @@ mkdir -p \
   "$SHARE_DIR/evaluation/benchmark/fixtures" \
   "$SHARE_DIR/evaluation" \
   "$SHARE_DIR/src/lib" \
+  "$SHARE_DIR/test" \
   "$SHARE_DIR/tools"
 
 cp -R "$REPO_ROOT/.claude/skills" "$SHARE_DIR/.claude/"
 cp "$REPO_ROOT/.gitignore" "$SHARE_DIR/.gitignore"
+cp -R "$REPO_ROOT/.wiki/policy/registry" "$SHARE_DIR/.wiki/policy/"
 cp -R "$REPO_ROOT/.wiki/policy/specs" "$SHARE_DIR/.wiki/policy/"
 cp -R "$REPO_ROOT/.wiki/policy/schemas" "$SHARE_DIR/.wiki/policy/"
 cp -R "$REPO_ROOT/.wiki/policy/templates" "$SHARE_DIR/.wiki/policy/"
@@ -93,12 +95,18 @@ cp "$REPO_ROOT/package.json" "$SHARE_DIR/package.json"
 cp "$REPO_ROOT/src/bootstrap-cli.js" "$SHARE_DIR/src/bootstrap-cli.js"
 cp "$REPO_ROOT/src/cli.js" "$SHARE_DIR/src/cli.js"
 cp "$REPO_ROOT/src/lib/bootstrap.js" "$SHARE_DIR/src/lib/bootstrap.js"
+cp "$REPO_ROOT/src/lib/compiler.js" "$SHARE_DIR/src/lib/compiler.js"
 cp "$REPO_ROOT/src/lib/config.js" "$SHARE_DIR/src/lib/config.js"
 cp "$REPO_ROOT/src/lib/frontmatter.js" "$SHARE_DIR/src/lib/frontmatter.js"
 cp "$REPO_ROOT/src/lib/runtime-index.js" "$SHARE_DIR/src/lib/runtime-index.js"
+cp "$REPO_ROOT/src/lib/runtime-requirements.js" "$SHARE_DIR/src/lib/runtime-requirements.js"
+cp "$REPO_ROOT/src/lib/taxonomy.js" "$SHARE_DIR/src/lib/taxonomy.js"
 cp "$REPO_ROOT/src/lib/wiki-internal.js" "$SHARE_DIR/src/lib/wiki-internal.js"
 cp "$REPO_ROOT/src/lib/utils.js" "$SHARE_DIR/src/lib/utils.js"
 cp "$REPO_ROOT/src/lib/wiki-repo.js" "$SHARE_DIR/src/lib/wiki-repo.js"
+if [ -d "$REPO_ROOT/test" ]; then
+  cp -R "$REPO_ROOT/test/." "$SHARE_DIR/test/"
+fi
 mkdir -p "$SHARE_DIR/evaluation/benchmark/fixtures/templates"
 cp "$REPO_ROOT/evaluation/benchmark/fixtures/templates/query-judging-rubric-v1.2.md" \
   "$SHARE_DIR/evaluation/benchmark/fixtures/templates/"
@@ -118,7 +126,11 @@ if ! command -v node >/dev/null 2>&1; then
   echo "Error: node is required for ${MAIN_NAME}" >&2
   exit 1
 fi
-exec node --no-warnings "${SHARE_DIR}/tools/wiki.js" "\$@"
+if ! node -e "const [major, minor] = process.versions.node.split('.').map(Number); process.exit(major > 22 || (major === 22 && minor >= 5) ? 0 : 1)" >/dev/null 2>&1; then
+  echo "Error: Node >= 22.5.0 is required for ${MAIN_NAME}" >&2
+  exit 1
+fi
+exec node "${SHARE_DIR}/tools/wiki.js" "\$@"
 EOF
 
 chmod +x "$MAIN_COMMAND_PATH"
@@ -142,6 +154,8 @@ echo "Check current status with:"
 echo "  ${MAIN_NAME} status"
 echo "Run a structural health check with:"
 echo "  ${MAIN_NAME} check"
+echo "Inspect taxonomy registry with:"
+echo "  ${MAIN_NAME} taxonomy"
 echo "Open the deterministic review queue with:"
 echo "  ${MAIN_NAME} review"
 echo "Locate the selected repo with:"

@@ -18,6 +18,7 @@ const {
   wikiRelative,
 } = require('./runtime-index');
 const { appendLog, computeCheckFindings, formatDate, formatTimestamp, updateState } = require('./wiki-repo');
+const { getTaxonomySnapshot, normalizeClassification, normalizeList } = require('./taxonomy');
 const { listMarkdownFiles } = require('./utils');
 
 function repoWikiPath(repoRoot, relativePath) {
@@ -55,6 +56,18 @@ function readOptionalBody(options = {}) {
   return '';
 }
 
+function pickSuggestedFields(options = {}) {
+  return {
+    suggested_tags: normalizeList(options.suggestedTags || options.suggested_tags),
+    suggested_aliases: normalizeList(options.suggestedAliases || options.suggested_aliases),
+    suggested_related_terms: normalizeList(options.suggestedRelatedTerms || options.suggested_related_terms),
+  };
+}
+
+function mergeTagLists(...values) {
+  return Array.from(new Set(values.flatMap((value) => normalizeList(value)).filter(Boolean)));
+}
+
 function resolveInternalFile(repoRoot, target) {
   const normalizedTarget = target.replace(/^\.wiki\//, '').replace(/\\/g, '/');
   const candidates = [
@@ -85,6 +98,21 @@ function createSource(repoRoot, options) {
   const initialPath = repoWikiPath(repoRoot, `sources/${subdir}/${date}-${slug}.md`);
   const filePath = ensureUniquePath(initialPath);
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  const classification = normalizeClassification(
+    repoRoot,
+    {
+      domain: options.domain || null,
+      primary_type: options.primaryType || options.primary_type || 'source',
+      subtype: options.subtype || null,
+      tags: options.tags,
+      ...pickSuggestedFields(options),
+    },
+    {
+      via: 'create-source',
+      sourcePath: wikiRelative(repoRoot, filePath),
+    }
+  );
+  const suggestedFields = pickSuggestedFields(options);
 
   const frontmatter = {
     type: 'source',
@@ -94,8 +122,13 @@ function createSource(repoRoot, options) {
     author: options.author || null,
     published_at: options.publishedAt || null,
     ingested_at: date,
-    domain: options.domain || null,
-    tags: Array.isArray(options.tags) ? options.tags : options.tags ? String(options.tags).split(',').map((item) => item.trim()).filter(Boolean) : [],
+    domain: classification.domain,
+    primary_type: classification.primary_type || 'source',
+    subtype: classification.subtype,
+    tags: classification.tags,
+    suggested_tags: suggestedFields.suggested_tags,
+    suggested_aliases: suggestedFields.suggested_aliases,
+    suggested_related_terms: suggestedFields.suggested_related_terms,
     extracted: Boolean(options.extracted),
   };
   const body = ['## 原始内容', '', readOptionalBody(options), '', '## 提取声明', ''].join('\n');
@@ -110,8 +143,8 @@ function createProposal(repoRoot, options) {
   const confidence = options.confidence || 'medium';
   const targetPage = options.targetPage || '';
   const triggerSource = options.triggerSource || '';
-  if (!['create', 'update', 'merge', 'split', 'archive'].includes(action)) {
-    throw new Error('create-proposal: --action must be create|update|merge|split|archive');
+  if (!['create', 'update', 'archive'].includes(action)) {
+    throw new Error('create-proposal: --action must be create|update|archive');
   }
   if (!['inbox', 'review'].includes(status)) {
     throw new Error('create-proposal: --status must be inbox|review');
@@ -128,6 +161,21 @@ function createProposal(repoRoot, options) {
   const initialPath = repoWikiPath(repoRoot, `changes/${status}/${date}-${action}-${slug}.md`);
   const filePath = ensureUniquePath(initialPath);
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  const classification = normalizeClassification(
+    repoRoot,
+    {
+      domain: options.domain || targetPage.split('/').filter(Boolean)[0] || null,
+      primary_type: options.primaryType || options.primary_type || options.targetType || null,
+      subtype: options.subtype || null,
+      tags: options.tags,
+      ...pickSuggestedFields(options),
+    },
+    {
+      via: 'create-proposal',
+      sourcePath: wikiRelative(repoRoot, filePath),
+    }
+  );
+  const suggestedFields = pickSuggestedFields(options);
 
   const frontmatter = {
     type: 'change-proposal',
@@ -135,6 +183,13 @@ function createProposal(repoRoot, options) {
     status,
     target_page: targetPage,
     target_type: options.targetType || null,
+    domain: classification.domain,
+    primary_type: classification.primary_type || options.targetType || null,
+    subtype: classification.subtype,
+    tags: classification.tags,
+    suggested_tags: suggestedFields.suggested_tags,
+    suggested_aliases: suggestedFields.suggested_aliases,
+    suggested_related_terms: suggestedFields.suggested_related_terms,
     trigger_source: triggerSource,
     origin: options.origin || 'ingest',
     confidence,
@@ -180,6 +235,19 @@ function createCanon(repoRoot, options) {
   }
   const parts = targetPage.split('/').filter(Boolean);
   const domain = parts[0] || '';
+  const classification = normalizeClassification(
+    repoRoot,
+    {
+      domain,
+      primary_type: options.primaryType || options.primary_type || pageType,
+      subtype: options.subtype || null,
+      tags: options.tags,
+    },
+    {
+      via: 'create-canon',
+      sourcePath: `canon/domains/${targetPage}.md`,
+    }
+  );
   const filePath = repoWikiPath(repoRoot, `canon/domains/${targetPage}.md`);
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   const sources = Array.isArray(options.sources)
@@ -190,7 +258,9 @@ function createCanon(repoRoot, options) {
   const frontmatter = {
     type: pageType,
     title,
-    domain,
+    domain: classification.domain || domain,
+    primary_type: classification.primary_type || pageType,
+    subtype: classification.subtype,
     sources,
     confidence: options.confidence || 'medium',
     last_compiled: formatDate(),
@@ -198,7 +268,7 @@ function createCanon(repoRoot, options) {
     last_updated: formatDate(),
     cross_refs: [],
     status: 'active',
-    tags: [],
+    tags: classification.tags,
     last_queried_at: null,
     query_count: 0,
   };
@@ -215,12 +285,15 @@ function updateDomainIndex(repoRoot, options) {
   const domainDir = repoWikiPath(repoRoot, `canon/domains/${domain}`);
   const indexPath = path.join(domainDir, '_index.md');
   const topIndexPath = repoWikiPath(repoRoot, 'canon/_index.md');
+  const domainsRoot = repoWikiPath(repoRoot, 'canon/domains');
   fs.mkdirSync(domainDir, { recursive: true });
-  if (!fs.existsSync(topIndexPath)) {
-    fs.writeFileSync(topIndexPath, '# Canon Index\n', 'utf8');
-  }
 
-  const pageFiles = listMarkdownFiles(domainDir).filter((filePath) => path.basename(filePath) !== '_index.md');
+  const pageFiles = listMarkdownFiles(domainDir)
+    .filter((filePath) => path.basename(filePath) !== '_index.md')
+    .filter((filePath) => {
+      const { frontmatter } = parseFrontmatterFile(filePath);
+      return frontmatter.status !== 'archived';
+    });
   const pages = pageFiles.map((filePath) => {
     const relPath = wikiRelative(repoRoot, filePath).replace(/^canon\/domains\//, '').replace(/\.md$/, '');
     const { frontmatter } = parseFrontmatterFile(filePath);
@@ -238,6 +311,9 @@ function updateDomainIndex(repoRoot, options) {
     }
     lines.push(`- [[${page.slug}]] — ${page.pageTitle}`);
   }
+  if (!pages.length) {
+    lines.push('当前暂无活跃页面。');
+  }
   const frontmatter = {
     type: 'index',
     domain,
@@ -248,12 +324,44 @@ function updateDomainIndex(repoRoot, options) {
   };
   writeFrontmatterFile(indexPath, frontmatter, lines.join('\n'));
 
-  const domainLink = `- [${domain}](domains/${domain}/_index.md)`;
-  const topLines = fs.readFileSync(topIndexPath, 'utf8').split('\n').filter(Boolean);
-  if (!topLines.includes(domainLink)) {
-    topLines.push(domainLink);
-    fs.writeFileSync(topIndexPath, `${topLines.join('\n')}\n`, 'utf8');
-  }
+  const activeDomains = fs.existsSync(domainsRoot)
+    ? fs.readdirSync(domainsRoot, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => entry.name)
+      .filter((entry) => listMarkdownFiles(path.join(domainsRoot, entry)).some((filePath) => {
+        if (path.basename(filePath) === '_index.md') {
+          return false;
+        }
+        const { frontmatter: pageFrontmatter } = parseFrontmatterFile(filePath);
+        return pageFrontmatter.status !== 'archived';
+      }))
+      .sort()
+    : [];
+
+  const topBody = [
+    '# Canon 知识库',
+    '',
+    '## 领域列表',
+    '',
+    ...(activeDomains.length
+      ? activeDomains.map((entry) => `- [${entry}](domains/${entry}/_index.md)`)
+      : ['- 暂无']),
+    '',
+    '## 使用说明',
+    '',
+    '- 通过 `/wiki` 使用知识前台入口',
+    '- 通过 `wiki check / review / apply / resolve` 处理确定性队列',
+  ].join('\n');
+  writeFrontmatterFile(
+    topIndexPath,
+    {
+      type: 'index',
+      title: 'Canon 知识库 — 顶层索引',
+      updated_at: formatDate(),
+      status: 'active',
+    },
+    topBody
+  );
   return indexPath;
 }
 
@@ -522,7 +630,7 @@ function validateWikiFile(repoRoot, fileInput, explicitSchema = '') {
       break;
     case 'change-proposal':
       ['type', 'action', 'status', 'target_page', 'trigger_source', 'confidence', 'proposed_at'].forEach(requireField);
-      requireEnum('action', ['create', 'update', 'merge', 'split', 'archive']);
+      requireEnum('action', ['create', 'update', 'archive']);
       requireEnum('status', ['inbox', 'review', 'approved', 'rejected', 'conflict', 'resolved', 'deferred']);
       requireEnum('confidence', ['high', 'medium', 'low']);
       break;
@@ -606,7 +714,12 @@ function importWorkflow(repoRoot, payload) {
     author: payload.source.author,
     publishedAt: payload.source.published_at,
     domain: payload.source.domain,
+    primaryType: payload.source.primary_type,
+    subtype: payload.source.subtype,
     tags: payload.source.tags,
+    suggested_tags: payload.source.suggested_tags,
+    suggested_aliases: payload.source.suggested_aliases,
+    suggested_related_terms: payload.source.suggested_related_terms,
     body: payload.source.body,
     bodyFile: payload.source.body_file,
     extracted: payload.source.extracted,
@@ -619,6 +732,13 @@ function importWorkflow(repoRoot, payload) {
         status: payload.proposal.status,
         targetPage: payload.proposal.target_page,
         targetType: payload.proposal.target_type,
+        domain: payload.proposal.domain,
+        primaryType: payload.proposal.primary_type,
+        subtype: payload.proposal.subtype,
+        tags: mergeTagLists(payload.proposal.tags, payload.source.tags),
+        suggested_tags: payload.proposal.suggested_tags,
+        suggested_aliases: payload.proposal.suggested_aliases,
+        suggested_related_terms: payload.proposal.suggested_related_terms,
         triggerSource: payload.proposal.trigger_source || wikiRelative(repoRoot, sourcePath),
         confidence: payload.proposal.confidence,
         origin: payload.proposal.origin,
@@ -679,13 +799,15 @@ function maintainWorkflow(repoRoot, options = {}) {
   const counts = countThings(repoRoot, 'all');
   const findings = computeCheckFindings(repoRoot);
   const decays = options.applyDecay ? decayConfidence(repoRoot) : [];
+  const taxonomy = getTaxonomySnapshot(repoRoot);
   updateState(repoRoot, options.applyDecay ? { last_lint: formatDate() } : {});
   const db = openRuntimeIndex(repoRoot);
   recordOperation(db, 'workflow.maintain', 'ok', {
     findings: findings.length,
     decays: decays.length,
+    pending_taxonomy_suggestions: taxonomy.pending_suggestions,
   });
-  return { counts, findings, decays };
+  return { counts, findings, decays, taxonomy };
 }
 
 function runInternalCommand(repoRoot, args) {
@@ -724,6 +846,14 @@ function runInternalCommand(repoRoot, args) {
             options.domain = value;
             index += 1;
             break;
+          case '--primary-type':
+            options.primaryType = value;
+            index += 1;
+            break;
+          case '--subtype':
+            options.subtype = value;
+            index += 1;
+            break;
           case '--tags':
             options.tags = value;
             index += 1;
@@ -758,6 +888,22 @@ function runInternalCommand(repoRoot, args) {
             break;
           case '--target-type':
             options.targetType = value;
+            index += 1;
+            break;
+          case '--domain':
+            options.domain = value;
+            index += 1;
+            break;
+          case '--primary-type':
+            options.primaryType = value;
+            index += 1;
+            break;
+          case '--subtype':
+            options.subtype = value;
+            index += 1;
+            break;
+          case '--tags':
+            options.tags = value;
             index += 1;
             break;
           case '--trigger-source':
@@ -808,12 +954,24 @@ function runInternalCommand(repoRoot, args) {
             options.title = value;
             index += 1;
             break;
+          case '--primary-type':
+            options.primaryType = value;
+            index += 1;
+            break;
+          case '--subtype':
+            options.subtype = value;
+            index += 1;
+            break;
           case '--sources':
             options.sources = value;
             index += 1;
             break;
           case '--confidence':
             options.confidence = value;
+            index += 1;
+            break;
+          case '--tags':
+            options.tags = value;
             index += 1;
             break;
           case '--body-file':

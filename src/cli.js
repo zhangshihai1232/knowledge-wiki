@@ -21,9 +21,10 @@ const {
   formatDate,
   getConflictRows,
   getProposalRows,
-  markApplyDone,
 } = require('./lib/wiki-repo');
+const { compileApprovedProposal } = require('./lib/compiler');
 const { askWorkflow, importWorkflow, maintainWorkflow, runInternalCommand } = require('./lib/wiki-internal');
+const { applySuggestionDecision, getTaxonomySnapshot, listSuggestions } = require('./lib/taxonomy');
 
 const COMMAND_NAME = process.env.WIKI_COMMAND_NAME || 'wiki';
 const CONTRACT_VERSION = '1.0';
@@ -127,13 +128,16 @@ function usage() {
   ${COMMAND_NAME} ask QUERY [--repo PATH] [--json] [--limit N]
   ${COMMAND_NAME} import --input FILE [--repo PATH] [--json]
   ${COMMAND_NAME} maintain [--repo PATH] [--json] [--apply-decay]
+  ${COMMAND_NAME} taxonomy [list] [--repo PATH] [--json]
+  ${COMMAND_NAME} taxonomy suggestions [--status pending|accepted|rejected] [--json]
+  ${COMMAND_NAME} taxonomy accept KIND VALUE [--domain NAME] [--primary-type NAME] [--json]
+  ${COMMAND_NAME} taxonomy reject KIND VALUE [--domain NAME] [--primary-type NAME] [--reason TEXT] [--json]
   ${COMMAND_NAME} review [list] [--json]
   ${COMMAND_NAME} review approve PROPOSAL --by NAME --note TEXT [--json]
   ${COMMAND_NAME} review reject PROPOSAL --by NAME --reason TEXT [--json]
   ${COMMAND_NAME} review reopen PROPOSAL [--reason TEXT] [--json]
   ${COMMAND_NAME} review revise PROPOSAL --note TEXT [--json]
-  ${COMMAND_NAME} apply [list] [--json]
-  ${COMMAND_NAME} apply done PROPOSAL [--result success|partial|error] [--sources-added N] [--refs-updated N] [--conflicts N] [--json]
+  ${COMMAND_NAME} apply [run [PROPOSAL] | list] [--json]
   ${COMMAND_NAME} resolve [list] [--json]
   ${COMMAND_NAME} resolve apply PROPOSAL --merged-file FILE --by NAME --as TEXT [--page FILE] [--confidence VALUE] [--json]
   ${COMMAND_NAME} guide
@@ -143,7 +147,7 @@ Public mental model:
   ${COMMAND_NAME}      deterministic task front door
 
 Task words:
-  status  check  review  apply  resolve
+  status  check  taxonomy  review  apply  resolve
 
 Agent workflow contracts:
   ask  import  maintain`);
@@ -311,6 +315,104 @@ function runMaintain(configPath, repoOverride, args) {
   console.log(`Counts: sources=${result.counts.sources} canon=${result.counts.canon} pending=${result.counts.pending} conflicts=${result.counts.conflicts}`);
   console.log(`Findings: ${result.findings.length}`);
   console.log(`Decay actions: ${result.decays.length}`);
+  console.log(`Taxonomy pending suggestions: ${result.taxonomy.pending_suggestions}`);
+}
+
+function runTaxonomy(configPath, repoOverride, args) {
+  const repoRoot = ensureRepoRoot(configPath, repoOverride);
+  const subcommand = !args[0] || args[0].startsWith('--') ? 'list' : args[0];
+  const json = hasFlag(args, '--json');
+
+  if (subcommand === 'list') {
+    const snapshot = getTaxonomySnapshot(repoRoot);
+    if (json) {
+      printJsonResult('wiki.taxonomy.list', repoRoot, snapshot);
+      return;
+    }
+    console.log(`Domains: ${snapshot.domains.length}`);
+    console.log(`Primary types: ${snapshot.primary_types.length}`);
+    console.log(`Subtypes: ${snapshot.subtypes.length}`);
+    console.log(`Pending suggestions: ${snapshot.pending_suggestions}`);
+    return;
+  }
+
+  if (subcommand === 'suggestions') {
+    let status = '';
+    for (let index = 1; index < args.length; index += 1) {
+      if (args[index] === '--status') {
+        status = args[index + 1] || '';
+        index += 1;
+        continue;
+      }
+      if (args[index] !== '--json') {
+        die(`unknown option for taxonomy suggestions: ${args[index]}`);
+      }
+    }
+    const rows = listSuggestions(repoRoot, status);
+    if (json) {
+      printJsonResult('wiki.taxonomy.suggestions', repoRoot, { rows, total: rows.length, status: status || null });
+      return;
+    }
+    if (!rows.length) {
+      console.log('No taxonomy suggestions.');
+      return;
+    }
+    printTable(
+      ['#', 'kind', 'value', 'domain', 'primary_type', 'status', 'count'],
+      rows.map((row, index) => [index + 1, row.kind, row.value, row.domain || '~', row.primary_type || '~', row.status, row.count || 0])
+    );
+    return;
+  }
+
+  if (!['accept', 'reject'].includes(subcommand)) {
+    die(`unknown subcommand for taxonomy: ${subcommand}`);
+  }
+
+  const kind = args[1];
+  const value = args[2];
+  if (!kind || !value) {
+    die(`taxonomy ${subcommand} requires KIND and VALUE`);
+  }
+
+  const options = {
+    kind,
+    value,
+    domain: '',
+    primaryType: '',
+    reason: '',
+  };
+  for (let index = 3; index < args.length; index += 1) {
+    const token = args[index];
+    switch (token) {
+      case '--domain':
+        options.domain = args[index + 1] || '';
+        index += 1;
+        break;
+      case '--primary-type':
+        options.primaryType = args[index + 1] || '';
+        index += 1;
+        break;
+      case '--reason':
+        options.reason = args[index + 1] || '';
+        index += 1;
+        break;
+      case '--json':
+        break;
+      default:
+        die(`unknown option for taxonomy ${subcommand}: ${token}`);
+    }
+  }
+
+  try {
+    const result = applySuggestionDecision(repoRoot, subcommand === 'accept' ? 'accepted' : 'rejected', options);
+    if (json) {
+      printJsonResult('wiki.taxonomy.result', repoRoot, { decision: subcommand, suggestion: result });
+      return;
+    }
+    console.log(`${result.kind}:${result.value} -> ${result.status}`);
+  } catch (error) {
+    die(error.message);
+  }
 }
 
 function runReview(configPath, repoOverride, args) {
@@ -412,7 +514,7 @@ function parseNumber(value, flag) {
 
 function runApply(configPath, repoOverride, args) {
   const repoRoot = ensureRepoRoot(configPath, repoOverride);
-  const subcommand = !args[0] || args[0].startsWith('--') ? 'list' : args[0];
+  const subcommand = !args[0] || args[0].startsWith('--') ? 'run' : args[0];
   const json = hasFlag(args, '--json');
 
   if (subcommand === 'list') {
@@ -432,58 +534,28 @@ function runApply(configPath, repoOverride, args) {
     return;
   }
 
-  if (subcommand !== 'done') {
+  if (subcommand !== 'run') {
     die(`unknown subcommand for apply: ${subcommand}`);
   }
 
-  const proposal = args[1];
-  if (!proposal) {
-    die('apply done requires PROPOSAL');
-  }
-  let result = 'success';
-  let sourcesAdded = 0;
-  let refsUpdated = 0;
-  let conflicts = 0;
-  for (let index = 2; index < args.length; index += 1) {
-    const token = args[index];
-    switch (token) {
-      case '--result':
-        result = args[index + 1] || '';
-        index += 1;
-        break;
-      case '--sources-added':
-        sourcesAdded = parseNumber(args[index + 1], '--sources-added');
-        index += 1;
-        break;
-      case '--refs-updated':
-        refsUpdated = parseNumber(args[index + 1], '--refs-updated');
-        index += 1;
-        break;
-      case '--conflicts':
-        conflicts = parseNumber(args[index + 1], '--conflicts');
-        index += 1;
-        break;
-      case '--json':
-        break;
-      default:
-        die(`unknown option for apply done: ${token}`);
-    }
-  }
-
-  try {
-    const proposalPath = markApplyDone(repoRoot, proposal, { result, sourcesAdded, refsUpdated, conflicts });
+  const proposal = args[1] && !args[1].startsWith('--') ? args[1] : '';
+  const pendingRows = getProposalRows(repoRoot, ['approved']).filter((row) => row.compiled !== 'true');
+  const targets = proposal ? [proposal] : pendingRows.map((row) => row.proposal);
+  if (!targets.length) {
     if (json) {
-      printJsonResult('wiki.apply.result', repoRoot, {
-        proposal,
-        output: proposalPath.replace(`${repoRoot}/.wiki/`, ''),
-        result,
-        sources_added: sourcesAdded,
-        refs_updated: refsUpdated,
-        conflicts,
-      });
+      printJsonResult('wiki.apply.result', repoRoot, { applied: [], total: 0 });
       return;
     }
-    console.log(proposalPath.replace(`${repoRoot}/.wiki/`, ''));
+    console.log('No approved proposals waiting for apply.');
+    return;
+  }
+  try {
+    const applied = targets.map((target) => compileApprovedProposal(repoRoot, target));
+    if (json) {
+      printJsonResult('wiki.apply.result', repoRoot, { applied, total: applied.length });
+      return;
+    }
+    applied.forEach((entry) => console.log(`${entry.proposal} -> ${entry.page}`));
   } catch (error) {
     die(error.message);
   }
@@ -583,7 +655,7 @@ function printGuide(configPath) {
   console.log('Minimal mental model:');
   console.log(`1. Outside a repo, use ${COMMAND_NAME} to choose/create the workspace repo.`);
   console.log('2. Inside a repo, use /wiki for semantic work.');
-  console.log(`3. Use ${COMMAND_NAME} only for deterministic queue work: status / check / review / apply / resolve.`);
+  console.log(`3. Use ${COMMAND_NAME} only for deterministic queue work: status / check / taxonomy / review / apply / resolve.`);
   console.log(`4. If you need structured runtime hooks, use ${COMMAND_NAME} ask / import / maintain.`);
   if (repoRoot) {
     console.log(`Current repo: ${repoRoot}`);
@@ -816,6 +888,9 @@ function run(argv) {
       return;
     case 'maintain':
       runMaintain(configPath, repoOverride, args.slice(1));
+      return;
+    case 'taxonomy':
+      runTaxonomy(configPath, repoOverride, args.slice(1));
       return;
     case 'review':
       runReview(configPath, repoOverride, args.slice(1));

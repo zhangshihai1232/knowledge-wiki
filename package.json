@@ -3,6 +3,12 @@
   "version": "0.1.0",
   "private": true,
   "type": "commonjs",
+  "engines": {
+    "node": ">=22.5.0"
+  },
+  "scripts": {
+    "test": "node --test"
+  },
   "bin": {
     "wiki": "tools/wiki.js"
   }

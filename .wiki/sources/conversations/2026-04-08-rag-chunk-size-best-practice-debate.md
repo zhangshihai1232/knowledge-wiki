@@ -4,12 +4,19 @@ source_kind: conversation
 title: "RAG 系统中 chunk size 最佳实践讨论"
 url: ~
 author: "工程师 Alice & Bob（内部 Slack 对话记录）"
-published_at: "2026-04-05"
-ingested_at: "2026-04-08"
-domain: "ai"
-tags: [rag, chunk-size, retrieval, embedding, context-window]
+published_at: 2026-04-05
+ingested_at: 2026-04-08
+domain: ai
+tags:
+  - rag
+  - chunk-size
+  - retrieval
+  - embedding
+  - context-window
 extracted: true
 authority: secondary
+primary_type: source
+subtype: meeting-note
 ---
 
 ## 原始内容

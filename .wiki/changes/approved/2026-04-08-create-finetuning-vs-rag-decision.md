@@ -2,19 +2,29 @@
 type: change-proposal
 action: create
 status: approved
-target_page: "ai/decisions/finetuning-vs-rag"
+target_page: ai/decisions/finetuning-vs-rag
 target_type: decision
-trigger_source: "sources/notes/2026-04-08-llm-finetuning-vs-rag-decision-criteria.md"
+trigger_source: sources/notes/2026-04-08-llm-finetuning-vs-rag-decision-criteria.md
 confidence: low
-proposed_at: "2026-04-08"
-reviewed_by: "test-evaluator"
+proposed_at: 2026-04-08
+reviewed_by: test-evaluator
 reviewed_at: "2026-04-08T10:20:00+08:00"
 rejection_reason: ~
 approve_note: "不确定性声明已被正确标记：笔记中的⚠️待验证条目（Databricks框架出处、Lost in the Middle引用、微调减少幻觉的反例）均已在提案中保留原始不确定性标注，未被平滑为确定性结论。approve理由：框架结构有价值，confidence=low可接受，待后续补充来源后升级"
 compiled: true
-compiled_at: "2026-04-08"
+compiled_at: 2026-04-08
 auto_quality_score: 0.63
 conflict_location: ~
+domain: ai
+primary_type: decision
+subtype: policy
+tags:
+  - llm
+  - fine-tuning
+  - rag
+  - decision-framework
+  - knowledge-injection
+  - lora
 ---
 
 ## 提案摘要
