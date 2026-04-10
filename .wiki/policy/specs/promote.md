@@ -40,10 +40,10 @@ AI 负责汇总信息、呈现对比视图、给出建议，但最终 approve / 
 | 标记 | 含义 | 执行者 |
 |------|------|--------|
 | 🧠 | 语义推理步骤 | LLM（Skill 层） |
-| ⚙️ | 确定性操作步骤 | CLI（`wiki-ops` 工具） |
+| ⚙️ | 确定性操作步骤 | CLI（优先 `wiki review`，必要时才落到 `wiki internal`） |
 | 🤝 | 人机交互步骤 | 人工决策，LLM 辅助 |
 
-⚙️ 步骤中的文件操作**必须**通过 `wiki-ops` CLI 命令执行，不得由 LLM 直接操作文件系统。
+⚙️ 步骤中的文件操作**必须**通过 CLI 执行，不得由 LLM 直接操作文件系统。公开工作流优先使用 `wiki review`。
 
 ## Steps
 
@@ -60,12 +60,10 @@ AI 负责汇总信息、呈现对比视图、给出建议，但最终 approve / 
 
 若两个目录均为空，输出"当前无待处理提案"并终止。
 
-**CLI 辅助**：
+**推荐 CLI**：
 
 ```bash
-# 统计待处理提案
-wiki-ops count inbox
-wiki-ops count review
+wiki review list --json
 ```
 
 ---
@@ -127,15 +125,14 @@ AI 从以下维度给出结构化建议，并明确表态支持或反对：
    status: approved
    ```
 
-   **CLI 执行**：
+    **推荐 CLI**：
 
-   ```bash
-   # 先由 LLM 填写 frontmatter 字段（reviewed_by, reviewed_at, approve_note），然后：
-   wiki-ops move-proposal changes/inbox/2026-04-01_foo.md --to approved \
-     --reviewed-by "alice" --approve-note "证据充分，来源可靠，变更内容与 source 一致"
-   ```
+    ```bash
+    wiki review approve changes/inbox/2026-04-01_foo.md \
+      --by "alice" --note "证据充分，来源可靠，变更内容与 source 一致"
+    ```
 
-   该命令自动验证 Gate 1（approve_note 长度 ≥ 20 字、非占位符）、设置 `status: approved`、执行文件移动。
+    该命令自动验证 Gate 1、设置 `status: approved`、执行文件移动，并完成日志与状态收尾。
 
 2. 将提案文件从 `changes/inbox/` 或 `changes/review/` **移动**到 `changes/approved/`，文件名保持不变。**移动**意为：在目标目录写入文件后，**删除源目录的原始文件**，确保同一提案不在两个目录同时存在。
 3. 后续由下游执行 spec 消费 approved 提案：
@@ -152,12 +149,12 @@ AI 从以下维度给出结构化建议，并明确表态支持或反对：
    status: rejected
    ```
 
-   **CLI 执行**：
+    **推荐 CLI**：
 
-   ```bash
-   wiki-ops move-proposal changes/inbox/2026-04-02_bar.md --to rejected \
-     --reviewed-by "alice" --rejection-reason "证据来源不可靠，缺乏权威来源支撑"
-   ```
+    ```bash
+    wiki review reject changes/inbox/2026-04-02_bar.md \
+      --by "alice" --reason "证据来源不可靠，缺乏权威来源支撑"
+    ```
 
 2. 将提案文件从 `changes/inbox/` 或 `changes/review/` **移动**到 `changes/rejected/`，文件名保持不变。移动后删除源目录原始文件。
 3. rejected 文件永久保留，作为决策记录，不得删除。可通过操作 D（reopen）重新提交。
@@ -175,11 +172,11 @@ AI 从以下维度给出结构化建议，并明确表态支持或反对：
    ```
 3. 清空 `reviewed_by`、`reviewed_at`、`rejection_reason` 字段（置为 `~`），重新等待审查。
 
-   **CLI 执行**：
+    **推荐 CLI**：
 
-   ```bash
-   wiki-ops move-proposal changes/rejected/2026-04-03_baz.md --to inbox
-   ```
+    ```bash
+    wiki review reopen changes/rejected/2026-04-03_baz.md
+    ```
 
 4. 建议在 `## 变更内容` 节追加说明本次修正的具体改动，便于审查者对比。
 
@@ -226,13 +223,10 @@ last_promote_at: 2026-04-08T14:30:00+08:00
 consecutive_approve_count: 4   # 若本批次最后一次决策为 approve，则基于最近一次 reject 起连续累计；若最后一次为 reject，则重置为 0
 ```
 
-**CLI 执行**：
+如需显式收尾，可执行：
 
 ```bash
-wiki-ops append-log --spec promote \
-  --message "审查者: alice | approved: 2 | rejected: 1 | modify: 1"
-wiki-ops update-state
-wiki-ops consecutive-approve-count
+wiki status
 ```
 
 ---

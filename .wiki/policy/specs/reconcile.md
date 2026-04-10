@@ -37,10 +37,10 @@ compile spec 在检出冲突后将 proposal 路由至 `changes/conflicts/`，并
 | 标记 | 含义 | 执行者 |
 |------|------|--------|
 | 🧠 | 语义推理步骤 | LLM（Skill 层） |
-| ⚙️ | 确定性操作步骤 | CLI（`wiki-ops` 工具） |
+| ⚙️ | 确定性操作步骤 | CLI（优先 `wiki resolve`，必要时才落到 `wiki internal`） |
 | 🤝 | 人机交互步骤 | 人工决策，LLM 辅助 |
 
-⚙️ 步骤中的文件操作**必须**通过 `wiki-ops` CLI 命令执行，不得由 LLM 直接操作文件系统。
+⚙️ 步骤中的文件操作**必须**通过 CLI 命令执行，不得由 LLM 直接操作文件系统。公开冲突收敛优先使用 `wiki resolve`。
 
 ## Steps
 
@@ -67,8 +67,8 @@ trigger_source: <触发冲突的 source 文件路径>
 **CLI 辅助**：
 
 ```bash
-wiki-ops frontmatter get changes/conflicts/2026-04-08-update-transformer.md target_page
-wiki-ops frontmatter get changes/conflicts/2026-04-08-update-transformer.md conflict_location
+wiki internal frontmatter get changes/conflicts/2026-04-08-update-transformer.md target_page
+wiki internal frontmatter get changes/conflicts/2026-04-08-update-transformer.md conflict_location
 ```
 
 ---
@@ -137,19 +137,20 @@ wiki-ops frontmatter get changes/conflicts/2026-04-08-update-transformer.md conf
    - 若裁决为 `keep_both`（并存）→ `confidence: medium`（两方来源均已保留，视为多来源佐证）
    - 若页面在本次裁决前 confidence 已为 `high` → 维持 `medium`（high 需重新经 promote 流程授予）
 
-**CLI 执行**：
+**推荐 CLI**：
 
 ```bash
-# 替换冲突标记为合并内容
-wiki-ops resolve-conflict canon/domains/ai/architectures/transformer.md --merged-file /tmp/merged-content.md
-
-# 更新 frontmatter
-wiki-ops frontmatter set canon/domains/ai/architectures/transformer.md last_compiled "2026-04-08"
-wiki-ops frontmatter set canon/domains/ai/architectures/transformer.md staleness_days "0"
-wiki-ops frontmatter set canon/domains/ai/architectures/transformer.md confidence "medium"
+wiki internal apply-merged-content canon/domains/ai/architectures/transformer.md \
+  --merged-file /tmp/merged-content.md
+wiki resolve apply changes/conflicts/2026-04-08-update-transformer.md \
+  --merged-file /tmp/merged-content.md \
+  --by "alice" \
+  --as "并存" \
+  --confidence medium
 ```
 
-> **LLM 职责**：根据裁决方案撰写合并后的内容（写入 merged-file），确定 confidence 值。
+> **LLM 职责**：根据裁决方案撰写合并后的内容（写入 merged-file），并给出建议 confidence。  
+> **runtime 职责**：写入合并内容、更新 frontmatter、归档 proposal、追加 LOG、更新 STATE。
 
 ---
 
@@ -175,13 +176,13 @@ wiki-ops frontmatter set canon/domains/ai/architectures/transformer.md confidenc
 - authority_basis: <裁决依据简述>
 ```
 
-**CLI 执行**：
+**推荐 CLI**：
 
 ```bash
-wiki-ops move-proposal changes/conflicts/2026-04-08-update-transformer.md --to resolved
-wiki-ops append-log --spec reconcile \
-  --message "target: ai/architectures/transformer | resolution: 并存 | resolved_by: alice"
-wiki-ops update-state
+wiki resolve apply changes/conflicts/2026-04-08-update-transformer.md \
+  --merged-file /tmp/merged-content.md \
+  --by "alice" \
+  --as "并存"
 ```
 
 ---

@@ -50,10 +50,10 @@ quality_gates:
 | 标记 | 含义 | 执行者 |
 |------|------|--------|
 | 🧠 | 语义推理步骤 | LLM（Skill 层） |
-| ⚙️ | 确定性操作步骤 | CLI（`wiki-ops` 工具） |
+| ⚙️ | 确定性操作步骤 | CLI（`wiki internal` 工具） |
 | 🤝 | 人机交互步骤 | 人工决策，LLM 辅助 |
 
-⚙️ 步骤中的文件操作**必须**通过 `wiki-ops` CLI 命令执行，不得由 LLM 直接操作文件系统。
+⚙️ 步骤中的文件操作**必须**通过 `wiki internal` CLI 命令执行，不得由 LLM 直接操作文件系统。
 
 ## Steps
 
@@ -84,8 +84,10 @@ tools/bootstrap-wiki-repo.sh {target_dir} [--name {repo_name}] [--force]
 - 新的 `evaluation/` 骨架
 - 新的 `README.md`
 - 新的 `tools/bootstrap-wiki-repo.sh`
+- 新的 `tools/wiki.js`
+- 新的 `src/` Node runtime
 
-脚手架命令会自动将 `wiki-ops.sh` 复制到新仓库的 `tools/` 目录，确保新仓库具备完整的 CLI 工具层。
+脚手架命令会自动将 `wiki` 的 Node CLI 运行时复制到新仓库，确保新仓库开箱即具备完整的 deterministic runtime，而不是依赖单独的 shell internal 脚本。
 
 ---
 

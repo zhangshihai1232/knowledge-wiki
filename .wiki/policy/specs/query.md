@@ -41,10 +41,10 @@ quality_gates:
 | 标记 | 含义 | 执行者 |
 |------|------|--------|
 | 🧠 | 语义推理步骤 | LLM（Skill 层） |
-| ⚙️ | 确定性操作步骤 | CLI（`wiki-ops` 工具） |
+| ⚙️ | 确定性操作步骤 | CLI（优先高层 `wiki ask` / `wiki import` contract） |
 | 🤝 | 人机交互步骤 | 人工决策，LLM 辅助 |
 
-⚙️ 步骤中的文件操作**必须**通过 `wiki-ops` CLI 命令执行，不得由 LLM 直接操作文件系统。
+⚙️ 步骤中的文件操作**必须**通过 CLI 命令执行，不得由 LLM 直接操作文件系统。默认优先高层 workflow contract，仅在缺少公开 contract 时才落到 `wiki internal`。
 
 ## Steps
 
@@ -63,7 +63,17 @@ quality_gates:
 
 ---
 
-### Step 2 🧠：导航定位候选 canon 页面
+### Step 2 🧠⚙️：导航定位候选 canon 页面
+
+优先通过运行态索引缩圈，而不是每次从 `_index.md` 全量遍历开始。
+
+**推荐 runtime hook**：
+
+```bash
+wiki ask "{用户问题}" --json
+```
+
+先读取 `wiki ask` 返回的候选 `pages / proposals / sources`，并结合 `retrieval.strategy / retrieval.tokens` 判断命中质量，再回到下面的层级结构做二次确认与阅读。只有当运行态索引结果明显不足时，才退回到 `_index.md` 的全量导航。
 
 按照以下层级导航结构，定位与问题相关的 canon 页面：
 
@@ -164,22 +174,25 @@ canon/_index.md
    ---
    ```
 
-**CLI 执行**：
+**推荐 CLI**：
 
 ```bash
-# 去重检查
-wiki-ops dedup-check --target-page "{domain}/{category}/{slug}"
-
-# 创建 write-back proposal
-wiki-ops create-proposal \
-  --action create \
-  --target-page "{domain}/{category}/{slug}" \
-  --trigger-source "system:query-writeback" \
-  --confidence low \
-  --body-file /tmp/query-gap-body.md
+wiki import --input query-writeback.json --json
 ```
 
-> **LLM 职责**：判断知识缺口、确定 target_page、撰写 proposal 正文（缺失知识描述、建议 canon 页面、触发此缺口的原始问题）。
+若 agent 直接生成 payload 流，可使用：
+
+```bash
+... | wiki import --input - --json
+```
+
+> **LLM 职责**：判断知识缺口、确定 `target_page`、生成 payload。  
+> **runtime 职责**：去重检查、proposal 落盘、日志与状态更新。
+
+其中 payload 中可固定：
+
+- `proposal.origin = query-writeback`
+- `proposal.trigger_source = system:query-writeback`
 
 3. proposal 内容包括：
    - 缺失知识的主题描述
@@ -215,9 +228,9 @@ wiki-ops create-proposal \
 **CLI 执行**：
 
 ```bash
-wiki-ops append-log --spec query \
+wiki internal append-log --spec query \
   --message "Q: {问题摘要} | 类型: {问题类型} | 来源页: {slug列表} | write-back: yes"
-wiki-ops update-state
+wiki internal update-state
 ```
 
 **write-back 转化追踪**：

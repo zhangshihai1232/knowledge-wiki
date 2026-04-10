@@ -1,0 +1,9 @@
+{
+  "name": "knowledge-wiki",
+  "version": "0.1.0",
+  "private": true,
+  "type": "commonjs",
+  "bin": {
+    "wiki": "tools/wiki.js"
+  }
+}

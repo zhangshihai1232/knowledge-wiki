@@ -82,10 +82,10 @@ quality_gates:
 | 标记 | 含义 | 执行者 |
 |------|------|--------|
 | 🧠 | 语义推理步骤 | LLM（Skill 层） |
-| ⚙️ | 确定性操作步骤 | CLI（`wiki-ops` 工具） |
+| ⚙️ | 确定性操作步骤 | CLI（`wiki` 运行时） |
 | 🤝 | 人机交互步骤 | 人工决策，LLM 辅助 |
 
-⚙️ 步骤中的文件操作**必须**通过 `wiki-ops` CLI 命令执行，不得由 LLM 直接操作文件系统。
+⚙️ 步骤中的文件操作**必须**通过 `wiki` 运行时执行，不得由 LLM 直接操作文件系统。
 
 ## Steps
 
@@ -148,7 +148,14 @@ quality_gates:
 3. 边界控制（避免无依据确定结论）
 4. 低风险后台动作后台化执行
 
-> **CLI 协作原则**：Step 3 中所有涉及文件系统的操作（schema 填充、proposal 写入、LOG 追加、STATE 更新）均通过 `wiki-ops` CLI 命令执行。LLM 负责语义判断和内容生成，CLI 负责确定性写入。
+> **CLI 协作原则**：Step 3 中所有涉及文件系统的操作（schema 填充、proposal 写入、LOG 追加、STATE 更新）均通过 `wiki` 运行时执行。LLM 负责语义判断和内容生成，CLI 负责确定性写入。
+
+推荐的运行态协作 contract：
+
+- `answer/query` 路由：先调用 `wiki ask "{query}" --json` 缩小候选上下文，再做语义综合；优先消费其 `contract_version / retrieval / pages / proposals / sources` 结构
+- `absorb/ingest` 路由：由 LLM 先生成结构化 payload，再调用 `wiki import --input payload.json --json`，让 runtime 一次性完成 source / proposal / claims / extracted / dedup evidence 收尾；批处理场景可用 `--input -` 从 stdin 读入
+- `organize/maintain` 路由：优先调用 `wiki maintain --json` 获取统计、结构发现与衰减建议
+- 队列收尾仍使用：`wiki review / wiki apply / wiki resolve`；agent 优先消费它们的 `--json` 输出，而不是表格文本
 
 5. 是否生成“后台摘要”的判定
 6. 是否追加“audit 视图”的判定

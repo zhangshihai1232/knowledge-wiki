@@ -1,0 +1,2 @@
+.wiki/runtime/*.sqlite
+.wiki/runtime/*.sqlite-*

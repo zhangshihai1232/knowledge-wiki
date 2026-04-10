@@ -161,10 +161,10 @@ quality_gates:
 | 标记 | 含义 | 执行者 |
 |------|------|--------|
 | 🧠 | 语义推理步骤 | LLM（Skill 层） |
-| ⚙️ | 确定性操作步骤 | CLI（`wiki-ops` 工具） |
+| ⚙️ | 确定性操作步骤 | CLI（优先 `wiki maintain`，必要时才落到 `wiki internal`） |
 | 🤝 | 人机交互步骤 | 人工决策，LLM 辅助 |
 
-⚙️ 步骤中的文件操作**必须**通过 `wiki-ops` CLI 命令执行，不得由 LLM 直接操作文件系统。
+⚙️ 步骤中的文件操作**必须**通过 CLI 命令执行，不得由 LLM 直接操作文件系统。维护场景优先使用 `wiki maintain` 获取结构化输入。
 
 ## Steps
 
@@ -204,14 +204,28 @@ quality_gates:
 
 ```bash
 # 获取系统统计
-wiki-ops count all
+wiki internal count all
 
 # 执行结构性扫描
-wiki-ops scan --format json
+wiki internal scan --format json
 
 # 读取治理提案 frontmatter
-wiki-ops frontmatter get changes/approved/2026-04-08-maintain-staleness-refresh.md origin
+wiki internal frontmatter get changes/approved/2026-04-08-maintain-staleness-refresh.md origin
 ```
+
+若环境支持 workflow contract，优先直接调用：
+
+```bash
+wiki maintain --json
+```
+
+该命令默认返回：
+
+- counts
+- findings
+- decays（可选）
+
+这样 LLM 在进入维护规划前，先得到已经缩圈好的结构化维护输入。
 
 ---
 
@@ -294,14 +308,14 @@ maintenance_log:
 
 ```bash
 # 内容归档：更新 frontmatter
-wiki-ops frontmatter set canon/domains/legacy-tools/tool-A.md status "archived"
-wiki-ops frontmatter set canon/domains/legacy-tools/tool-A.md archived_at "2026-04-09"
+wiki internal frontmatter set canon/domains/legacy-tools/tool-A.md status "archived"
+wiki internal frontmatter set canon/domains/legacy-tools/tool-A.md archived_at "2026-04-09"
 
 # MOC 重组：从索引移除归档页面
-wiki-ops update-index --domain legacy-tools --action remove --slug tool-A
+wiki internal update-index --domain legacy-tools --action remove --slug tool-A
 
 # 标记治理提案为已消费
-wiki-ops mark-compiled changes/approved/2026-04-08-maintain-staleness-refresh.md
+wiki internal mark-compiled changes/approved/2026-04-08-maintain-staleness-refresh.md
 ```
 
 > **LLM 职责**：领域分裂方案设计（确定拆分边界、页面归属）、领域合并的重叠分析、内容归档候选评估。
@@ -352,9 +366,9 @@ STATE.md 已更新。
 **CLI 执行**：
 
 ```bash
-wiki-ops append-log --spec maintain \
+wiki internal append-log --spec maintain \
   --message "操作: 内容归档 | 目标: legacy-tools/5页 | 结果: completed"
-wiki-ops update-state
+wiki internal update-state
 ```
 
 ---

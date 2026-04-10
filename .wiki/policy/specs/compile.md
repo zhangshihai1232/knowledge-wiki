@@ -49,10 +49,10 @@ compile **只处理可直接写入 canon 的知识提案**。`origin=lint-patrol
 | 标记 | 含义 | 执行者 |
 |------|------|--------|
 | 🧠 | 语义推理步骤 | LLM（Skill 层） |
-| ⚙️ | 确定性操作步骤 | CLI（`wiki-ops` 工具） |
+| ⚙️ | 确定性操作步骤 | CLI（`wiki internal` 工具） |
 | 🤝 | 人机交互步骤 | 人工决策，LLM 辅助 |
 
-⚙️ 步骤中的文件操作**必须**通过 `wiki-ops` CLI 命令执行，不得由 LLM 直接操作文件系统。
+⚙️ 步骤中的文件操作**必须**通过 `wiki internal` CLI 命令执行，不得由 LLM 直接操作文件系统。
 
 ## Steps
 
@@ -86,9 +86,9 @@ canon/domains/{target_page}.md
 
 **CLI 辅助**：读取 proposal frontmatter 字段：
 ```bash
-wiki-ops frontmatter get changes/approved/2026-04-08-create-transformer.md target_page
-wiki-ops frontmatter get changes/approved/2026-04-08-create-transformer.md action
-wiki-ops frontmatter get changes/approved/2026-04-08-create-transformer.md origin
+wiki internal frontmatter get changes/approved/2026-04-08-create-transformer.md target_page
+wiki internal frontmatter get changes/approved/2026-04-08-create-transformer.md action
+wiki internal frontmatter get changes/approved/2026-04-08-create-transformer.md origin
 ```
 
 **错误处理**：如果 `target_page` 对应的 canon 页不存在且 `action` 不是 `create`，则终止当前 proposal 的编译，在 LOG 中记录 `ERROR: target not found`，将 proposal 的 `compiled` 字段标记为 `error`，继续处理下一个。
@@ -138,10 +138,10 @@ compile 执行 `create` 或 `update` action 时，按以下优先级确定 confi
 
 **CLI 执行**：更新 canon 页 frontmatter：
 ```bash
-wiki-ops frontmatter set canon/domains/ai/architectures/transformer.md last_compiled "2026-04-08"
-wiki-ops frontmatter set canon/domains/ai/architectures/transformer.md last_updated "2026-04-08"
-wiki-ops frontmatter set canon/domains/ai/architectures/transformer.md staleness_days "0"
-wiki-ops frontmatter set canon/domains/ai/architectures/transformer.md confidence "medium"
+wiki internal frontmatter set canon/domains/ai/architectures/transformer.md last_compiled "2026-04-08"
+wiki internal frontmatter set canon/domains/ai/architectures/transformer.md last_updated "2026-04-08"
+wiki internal frontmatter set canon/domains/ai/architectures/transformer.md staleness_days "0"
+wiki internal frontmatter set canon/domains/ai/architectures/transformer.md confidence "medium"
 ```
 > **LLM 职责**：确定 confidence 值（基于 source authority 和冲突检测规则），追加 sources 列表项。
 
@@ -206,10 +206,10 @@ pages:
 **CLI 执行**：
 ```bash
 # 添加新页面到域索引
-wiki-ops update-index --domain ai --action add --slug transformer --title "Transformer 架构"
+wiki internal update-index --domain ai --action add --slug transformer --title "Transformer 架构"
 
 # 若需创建新 canon 页
-wiki-ops create-canon --target-page "ai/architectures/transformer" --type concept --title "Transformer 架构" --sources "sources/articles/2026-04-08-attention-is-all-you-need.md"
+wiki internal create-canon --target-page "ai/architectures/transformer" --type concept --title "Transformer 架构" --sources "sources/articles/2026-04-08-attention-is-all-you-need.md"
 ```
 
 ---
@@ -227,7 +227,7 @@ wiki-ops create-canon --target-page "ai/architectures/transformer" --type concep
 
 **CLI 执行**：
 ```bash
-wiki-ops mark-compiled changes/approved/2026-04-08-create-transformer.md
+wiki internal mark-compiled changes/approved/2026-04-08-create-transformer.md
 ```
 
 ---
@@ -257,9 +257,9 @@ total_canon_pages: <pages/ 目录下非 archived 的 canon 页数量>
 
 **CLI 执行**：
 ```bash
-wiki-ops append-log --spec compile \
+wiki internal append-log --spec compile \
   --message "action: create | target: ai/architectures/transformer | sources_added: 1 | conflicts: 0 | result: success"
-wiki-ops update-state
+wiki internal update-state
 ```
 
 ---
@@ -290,7 +290,7 @@ last_lint_score: <百分比>
 
 **CLI 执行（结构性规则部分）**：
 ```bash
-wiki-ops scan --format json
+wiki internal scan --format json
 ```
 > **LLM 职责**：执行 L006 跨页矛盾检测（需语义理解）。
 
@@ -369,7 +369,7 @@ wiki-ops scan --format json
 
 **CLI 执行**：
 ```bash
-wiki-ops decay
+wiki internal decay
 ```
 该命令自动扫描所有 canon 页，计算 effective_staleness_days，按规则降级 confidence，并在 LOG 中记录衰减条目。
 
