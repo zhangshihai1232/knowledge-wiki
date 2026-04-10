@@ -130,3 +130,15 @@ wiki migrate rollback PLAN_ID --json
 4. 若满足条件，再追加后台摘要
 5. 若满足条件，再追加 audit 视图
 6. 若命中高风险动作，只提出**单个最小确认问题**
+
+**快速路由备忘**：
+
+| 用户说了什么 | 路由到 |
+|------------|--------|
+| 提问、询问 | `query` |
+| 贴资料、记录、摄入 | `ingest` |
+| 整理、刷新、批量更新 | `maintain / refresh / reconcile` |
+| 重命名领域、迁移页面、废弃分类、拆分子类 | `govern → wiki migrate` |
+| "taxonomy 里 X 已废弃" | `wiki taxonomy deprecate` |
+| "这两个页面内容重复" | `govern → wiki migrate --op merge-pages` |
+| reclassify collision 错误 | 暂停，展示三选一恢复问题（合并/重命名/放弃） |

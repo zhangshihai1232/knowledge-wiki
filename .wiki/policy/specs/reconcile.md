@@ -86,7 +86,17 @@ wiki internal frontmatter get changes/conflicts/2026-04-08-update-transformer.md
 
 ---
 
-### Step 3 🧠：生成裁决建议
+### Step 3 🧠：判断冲突根因类型
+
+在生成裁决建议前，先判断冲突是**内容分歧**还是**结构错误**：
+
+| 根因类型 | 特征 | 处理路径 |
+|---------|------|---------|
+| **内容分歧** | 两份资料对同一事实给出不同表述，页面分类正确 | 走 Step 3.1（裁决） |
+| **结构错误** | 页面本不该在这个 domain/subtype 下，分类错误导致与同名页面冲突 | 走 Step 3.2（迁移修复） |
+| **重复页面** | 两页内容高度重叠（>80%），应合并为一页 | 走 Step 3.3（合并） |
+
+#### Step 3.1 — 内容分歧裁决
 
 基于以下优先级规则，生成结构化裁决建议（不自动执行，提交人工确认）：
 
@@ -109,15 +119,61 @@ wiki internal frontmatter get changes/conflicts/2026-04-08-update-transformer.md
   > {具体文字}
 ```
 
+#### Step 3.2 — 结构错误（错误分类导致路径冲突）
+
+当判断冲突根因是分类错误时，**不走内容裁决流程**，改为触发迁移修复：
+
+```bash
+# 1. 确认冲突页面的 page_id 和当前路径
+wiki migrate plan \
+  --op reclassify \
+  --scope "reconcile-structural-fix" \
+  --from page_ids={冲突页面的page_id} \
+  --to domain={正确域} [subtype={正确子类型}] \
+  --reason "reconcile: 冲突根因为分类错误，纠正后路径冲突消除" \
+  --json
+
+# 2. 预演确认
+wiki migrate dry-run PLAN_ID --json
+
+# 3. 人工确认后执行（注意 reclassify collision：若目标路径已有内容，先走 Step 3.3 合并）
+wiki migrate apply PLAN_ID --json
+```
+
+向人工展示的问题是："冲突的根本原因是 **{页面A}** 被错误地分类在 `{错误域}` 下。建议将其迁移到 `{正确域}`，这会消除路径冲突。是否批准迁移？"
+
+#### Step 3.3 — 重复页面合并
+
+当两页内容高度重叠时，使用 `merge-pages` 操作将 source 页内容并入 target 页：
+
+```bash
+wiki migrate plan \
+  --op merge-pages \
+  --scope "reconcile-dedup" \
+  --from page_paths={重复页路径1},{重复页路径2} \
+  --to page={保留页路径} \
+  --reason "reconcile: 内容重复，合并为单一页面" \
+  --json
+```
+
 ---
 
 ### Step 4 🤝：人工确认裁决方案
 
 将 Step 3 的裁决建议呈现给人工审查者，等待以下决策之一：
 
+**内容分歧（Step 3.1）**：
 - **approve**：接受 AI 建议的裁决方案，执行 Step 5
 - **override**：人工指定保留哪一方或提供新的合并文字，执行 Step 5
 - **defer**：暂缓处理，冲突标记保留，proposal 状态改为 `deferred`，不执行 Step 5
+
+**结构错误（Step 3.2）**：
+- **approve-migrate**：批准迁移修复方案，执行 `wiki migrate apply`，迁移完成后路径冲突自动消除，跳过 Step 5 内容合并
+- **defer**：暂缓处理，保留冲突标记
+
+**重复页面（Step 3.3）**：
+- **approve-merge**：批准 merge-pages 操作，执行 `wiki migrate apply`
+- **defer**：暂缓处理
 
 ---
 

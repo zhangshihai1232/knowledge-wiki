@@ -378,8 +378,13 @@ maintenance_log:
 
 **CLI 执行（维护子操作）**：
 
+> 说明：操作类型不同，使用不同的 CLI 工具：
+> - **领域分裂/合并/重分类** → `wiki migrate`（已在操作章节 1/6/7 详述）
+> - **内容归档** → `wiki internal frontmatter set`（不涉及路径变更，无需 migrate）
+> - **MOC 重组** → `wiki internal update-index`
+
 ```bash
-# 内容归档：更新 frontmatter
+# 内容归档：仅更新 frontmatter（不移动文件，不需要 wiki migrate）
 wiki internal frontmatter set canon/domains/legacy-tools/tool-A.md status "archived"
 wiki internal frontmatter set canon/domains/legacy-tools/tool-A.md archived_at "2026-04-09"
 
@@ -390,7 +395,8 @@ wiki internal update-index --domain legacy-tools --sync
 wiki internal mark-compiled changes/approved/2026-04-08-maintain-staleness-refresh.md
 ```
 
-> **LLM 职责**：领域分裂方案设计（确定拆分边界、页面归属）、领域合并的重叠分析、内容归档候选评估。
+> **LLM 职责**：领域分裂方案设计（确定拆分边界、页面归属）、领域合并的重叠分析、内容归档候选评估。  
+> **CLI 职责边界**：凡涉及文件路径变更的操作（分裂/合并/迁移），必须走 `wiki migrate` 工作流以获得 dry-run、collision 检测和 rollback 能力；仅修改 frontmatter 字段而不改变路径的操作（归档、标记等）可直接用 `wiki internal frontmatter set`。
 
 ---
 
