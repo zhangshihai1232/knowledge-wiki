@@ -128,6 +128,9 @@ function ensureDatabase(repoRoot) {
   ensureTableColumn(db, 'pages', 'primary_type', 'TEXT');
   ensureTableColumn(db, 'pages', 'subtype', 'TEXT');
   ensureTableColumn(db, 'pages', 'tags_json', 'TEXT');
+  ensureTableColumn(db, 'pages', 'page_id', 'TEXT');
+  ensureTableColumn(db, 'pages', 'collection', 'TEXT');
+  ensureTableColumn(db, 'pages', 'secondary_domains_json', 'TEXT');
   ensureTableColumn(db, 'sources', 'primary_type', 'TEXT');
   ensureTableColumn(db, 'sources', 'subtype', 'TEXT');
   ensureTableColumn(db, 'sources', 'tags_json', 'TEXT');
@@ -196,9 +199,11 @@ function upsertPageFile(db, repoRoot, filePath) {
   const domain = parts[0] || '';
   const category = parts.length > 2 ? parts.slice(1, -1).join('/') : parts[1] || '';
   const slug = parts[parts.length - 1] || '';
+  const collection = frontmatter.collection || category || '';
   const sources = Array.isArray(frontmatter.sources) ? frontmatter.sources : [];
   const crossRefs = Array.isArray(frontmatter.cross_refs) ? frontmatter.cross_refs : [];
   const tags = Array.isArray(frontmatter.tags) ? frontmatter.tags : [];
+  const secondaryDomains = Array.isArray(frontmatter.secondary_domains) ? frontmatter.secondary_domains : [];
   const primaryType = frontmatter.primary_type || frontmatter.type || '';
   const subtype = frontmatter.subtype || '';
 
@@ -206,8 +211,8 @@ function upsertPageFile(db, repoRoot, filePath) {
   db.prepare(`
     INSERT INTO pages (
       path, title, domain, category, slug, primary_type, subtype, tags_json, status, confidence, last_updated,
-      last_compiled, staleness_days, source_count, content, meta_json
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      last_compiled, staleness_days, source_count, content, meta_json, page_id, collection, secondary_domains_json
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     relPath,
     frontmatter.title || '',
@@ -224,7 +229,10 @@ function upsertPageFile(db, repoRoot, filePath) {
     Number.parseInt(frontmatter.staleness_days || 0, 10) || 0,
     sources.length,
     body,
-    JSON.stringify(frontmatter)
+    JSON.stringify(frontmatter),
+    frontmatter.page_id || null,
+    collection,
+    JSON.stringify(secondaryDomains)
   );
   db.prepare('INSERT INTO page_fts (path, title, content) VALUES (?, ?, ?)').run(relPath, frontmatter.title || '', body);
   const insertLink = db.prepare('INSERT OR IGNORE INTO links (source_path, target_slug) VALUES (?, ?)');
@@ -424,6 +432,10 @@ function applyFieldFilters(rows, hints, options = {}) {
   if (options.useSubtype && hints.subtype_hints.length) {
     filtered = filterRowsWithFallback(filtered, (row) => hints.subtype_hints.includes(String(row.subtype || '')));
   }
+  // Collection hints narrow pages within a domain to a specific navigation bucket
+  if (options.useCollection && hints.collection_hints && hints.collection_hints.length) {
+    filtered = filterRowsWithFallback(filtered, (row) => hints.collection_hints.includes(String(row.collection || '')));
+  }
   return filtered;
 }
 
@@ -455,6 +467,29 @@ function rankPageRow(row, query, tokens, hints) {
   score += countMatchedTokens(content, tokens) * 4;
   if (includesHint(hints.domain_hints, row.domain)) {
     score += 28;
+  }
+  // Tags as soft domain/cross-domain signals: if page tags contain a queried domain or collection, boost
+  const pageTags = parseTags(row.tags_json);
+  if (hints.domain_hints.some((d) => pageTags.includes(d))) {
+    score += 14; // softer than primary domain match (28), signals "also relevant to" relationship
+  }
+  if (hints.collection_hints && hints.collection_hints.some((c) => pageTags.includes(c))) {
+    score += 10;
+  }
+  // tag_hints: direct match against registered controlled-vocabulary tags
+  if (hints.tag_hints && hints.tag_hints.length) {
+    const matchedTags = hints.tag_hints.filter((t) => pageTags.includes(t));
+    score += matchedTags.length * 16; // each matching registered tag is a strong relevance signal
+  }
+  // secondary_domains: full domain-level relevance if page explicitly cross-lists this domain
+  if (hints.domain_hints.length && row.secondary_domains_json) {
+    const secondaryDomains = parseTags(row.secondary_domains_json);
+    if (hints.domain_hints.some((d) => secondaryDomains.includes(d))) {
+      score += 22; // intentional cross-domain relevance — strong signal
+    }
+  }
+  if (hints.collection_hints && includesHint(hints.collection_hints, row.collection)) {
+    score += 22;
   }
   if (includesHint(hints.primary_type_hints, row.primary_type)) {
     score += 26;
@@ -577,7 +612,7 @@ function searchRuntimeIndex(repoRoot, query, limit = 5) {
   const normalizedQuery = query.trim();
   const pageCandidates = db
     .prepare(
-      `SELECT path, title, domain, confidence, slug, primary_type, subtype, tags_json, content
+      `SELECT path, title, domain, confidence, slug, primary_type, subtype, tags_json, content, page_id, collection, secondary_domains_json
        FROM pages
        WHERE status != 'archived'
        ORDER BY path ASC`
@@ -602,9 +637,12 @@ function searchRuntimeIndex(repoRoot, query, limit = 5) {
     ...proposalCandidates.map((row) => row.domain),
     ...sourceCandidates.map((row) => row.domain),
   ].filter(Boolean)));
-  const hints = buildQueryHints(repoRoot, normalizedQuery, { runtimeDomains });
+  const runtimeCollections = Array.from(new Set(
+    pageCandidates.map((row) => row.collection).filter(Boolean)
+  ));
+  const hints = buildQueryHints(repoRoot, normalizedQuery, { runtimeDomains, runtimeCollections });
   const tokens = hints.tokens.length ? hints.tokens : tokenizeQuery(normalizedQuery);
-  const filteredPageCandidates = applyFieldFilters(pageCandidates, hints, { usePrimaryType: true, useSubtype: true });
+  const filteredPageCandidates = applyFieldFilters(pageCandidates, hints, { usePrimaryType: true, useSubtype: true, useCollection: true });
   const filteredProposalCandidates = applyFieldFilters(proposalCandidates, hints, { usePrimaryType: true, useSubtype: true });
   const filteredSourceCandidates = applyFieldFilters(sourceCandidates, hints, {
     usePrimaryType: hints.primary_type_hints.includes('source'),
@@ -618,6 +656,8 @@ function searchRuntimeIndex(repoRoot, query, limit = 5) {
       path: row.path,
       title: row.title,
       domain: row.domain,
+      collection: row.collection || null,
+      page_id: row.page_id || null,
       confidence: row.confidence,
       primary_type: row.primary_type,
       subtype: row.subtype,
@@ -680,6 +720,7 @@ function searchRuntimeIndex(repoRoot, query, limit = 5) {
         domain_hints: hints.domain_hints,
         primary_type_hints: hints.primary_type_hints,
         subtype_hints: hints.subtype_hints,
+        collection_hints: hints.collection_hints,
         focus: hints.focus,
       },
       candidate_counts: {

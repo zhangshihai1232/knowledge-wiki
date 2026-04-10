@@ -295,6 +295,87 @@ function computeCheckFindings(repoRoot) {
     pushFinding('L011', 'warning', 'changes', `连续批准${consecutiveApproves}次`);
   }
 
+  // ── Structural classification signals ─────────────────────────────────────
+  // S001 Overflow: a domain or subtype has too many pages — suggest split
+  const OVERFLOW_DOMAIN_THRESHOLD = 30;
+  const OVERFLOW_SUBTYPE_THRESHOLD = 20;
+  for (const [domain, count] of domainCounts.entries()) {
+    if (domain && count > OVERFLOW_DOMAIN_THRESHOLD) {
+      pushFinding('S001', 'info', `canon/domains/${domain}`, `[Overflow] 大分类 '${domain}' 含 ${count} 页，超过阈值${OVERFLOW_DOMAIN_THRESHOLD}，建议拆分为子领域`);
+    }
+  }
+  const subtypeCounts = new Map();
+  for (const page of pages) {
+    if (page.subtype) {
+      const key = `${page.domain}:${page.subtype}`;
+      subtypeCounts.set(key, (subtypeCounts.get(key) || 0) + 1);
+    }
+  }
+  for (const [key, count] of subtypeCounts.entries()) {
+    if (count > OVERFLOW_SUBTYPE_THRESHOLD) {
+      const [domain, subtype] = key.split(':');
+      pushFinding('S001', 'info', `canon/domains/${domain}`, `[Overflow] 小分类 '${subtype}' 含 ${count} 页，超过阈值${OVERFLOW_SUBTYPE_THRESHOLD}，建议拆分`);
+    }
+  }
+
+  // S002 Sparsity: a subtype has only 0–1 pages — suggest merge
+  for (const [key, count] of subtypeCounts.entries()) {
+    if (count <= 1) {
+      const [domain, subtype] = key.split(':');
+      pushFinding('S002', 'info', `canon/domains/${domain}`, `[Sparsity] 小分类 '${subtype}' 仅有 ${count} 页，建议合并到相邻分类`);
+    }
+  }
+
+  // S003 Ambiguity: same subtype value used across many domains (boundary unclear)
+  const subtypeByDomain = new Map();
+  for (const page of pages) {
+    if (page.subtype) {
+      if (!subtypeByDomain.has(page.subtype)) {
+        subtypeByDomain.set(page.subtype, new Set());
+      }
+      subtypeByDomain.get(page.subtype).add(page.domain);
+    }
+  }
+  for (const [subtype, domains] of subtypeByDomain.entries()) {
+    if (domains.size >= 3) {
+      pushFinding('S003', 'info', 'taxonomy/subtypes', `[Ambiguity] 小分类 '${subtype}' 跨越 ${domains.size} 个大领域，边界可能不清晰`);
+    }
+  }
+
+  // S004 Drift: pending taxonomy suggestions are piling up
+  const taxonomySnapshot = getTaxonomySnapshot(repoRoot);
+  if (taxonomySnapshot.pending_suggestions > 10) {
+    pushFinding('S004', 'info', 'taxonomy/suggestions', `[Drift] 积压 ${taxonomySnapshot.pending_suggestions} 条待决 taxonomy suggestion，分类体系可能不稳定`);
+  }
+
+  // S005 Retrieval inefficiency: a single domain has too many pages (large query candidate set)
+  for (const [domain, count] of domainCounts.entries()) {
+    if (domain && count > 15) {
+      pushFinding('S005', 'info', `canon/domains/${domain}`, `[Retrieval] 大分类 '${domain}' 含 ${count} 页，ask 查询候选集偏大，建议细化 collection 分桶`);
+    }
+  }
+
+  // S006 Unclassified: pages with subtype=null or confidence=low and no recent query activity
+  //   These are pages the system couldn't confidently classify — surface them for AI reclassification
+  const LOW_CONFIDENCE_STALE_DAYS = 14;
+  for (const page of pages) {
+    const meta = JSON.parse(page.meta_json || '{}');
+    const lastUpdated = page.last_updated || '';
+    let staleness = Number.parseInt(page.staleness_days || 0, 10) || 0;
+    if (lastUpdated) {
+      const updatedDate = new Date(lastUpdated);
+      if (!Number.isNaN(updatedDate.getTime())) {
+        staleness = Math.max(0, Math.floor((Date.now() - updatedDate.getTime()) / 86400000));
+      }
+    }
+    const noSubtype = !page.subtype;
+    const lowConf = page.confidence === 'low';
+    if ((noSubtype || lowConf) && staleness > LOW_CONFIDENCE_STALE_DAYS) {
+      const reason = noSubtype ? 'subtype 未设定' : 'confidence=low';
+      pushFinding('S006', 'info', page.path, `[Unclassified] ${reason}，已 ${staleness} 天未更新，建议 AI 重新分类提案`);
+    }
+  }
+
   recordOperation(db, 'check.run', 'ok', { findings: findings.length });
   return findings;
 }

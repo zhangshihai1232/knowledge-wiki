@@ -1,0 +1,84 @@
+{
+  "version": "1.0",
+  "items": [
+    {
+      "id": "architecture",
+      "primary_types": [
+        "concept",
+        "entity"
+      ],
+      "domains": [
+        "ai",
+        "engineering"
+      ],
+      "aliases": [
+        "arch"
+      ],
+      "status": "active"
+    },
+    {
+      "id": "workflow",
+      "primary_types": [
+        "guide",
+        "decision"
+      ],
+      "domains": [
+        "ai",
+        "engineering",
+        "operations"
+      ],
+      "aliases": [
+        "process"
+      ],
+      "status": "active"
+    },
+    {
+      "id": "policy",
+      "primary_types": [
+        "decision",
+        "guide"
+      ],
+      "domains": [
+        "product",
+        "engineering",
+        "operations"
+      ],
+      "aliases": [
+        "rule"
+      ],
+      "status": "active"
+    },
+    {
+      "id": "tool",
+      "primary_types": [
+        "entity",
+        "source"
+      ],
+      "domains": [
+        "ai",
+        "engineering",
+        "product"
+      ],
+      "aliases": [
+        "platform"
+      ],
+      "status": "active"
+    },
+    {
+      "id": "meeting-note",
+      "primary_types": [
+        "source"
+      ],
+      "domains": [
+        "ai",
+        "product",
+        "engineering",
+        "operations"
+      ],
+      "aliases": [
+        "minutes"
+      ],
+      "status": "active"
+    }
+  ]
+}

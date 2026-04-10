@@ -7,6 +7,7 @@ const REGISTRY_VERSION = '1.0';
 const DOMAIN_REGISTRY_FILE = 'domains.json';
 const PRIMARY_TYPE_REGISTRY_FILE = 'primary-types.json';
 const SUBTYPE_REGISTRY_FILE = 'subtypes.json';
+const TAG_REGISTRY_FILE = 'tags.json';
 const SUGGESTION_QUEUE_FILE = 'suggestions.json';
 
 const DEFAULT_DOMAINS = {
@@ -45,6 +46,23 @@ const DEFAULT_SUBTYPES = {
 const DEFAULT_SUGGESTIONS = {
   version: REGISTRY_VERSION,
   items: [],
+};
+
+// Tag registry: controlled vocabulary for cross-cutting concerns.
+// Tags differ from subtypes: they are NOT domain-scoped, and a page can have many.
+// Categories: concern (security, performance, cost…), lifecycle (draft, stable, deprecated),
+//             audience (junior, senior, pm, ic), source-type (internal, external, experiment)
+const DEFAULT_TAGS = {
+  version: REGISTRY_VERSION,
+  items: [
+    { id: 'security',     aliases: ['sec', 'auth', 'safety'],   category: 'concern',   status: 'active' },
+    { id: 'performance',  aliases: ['perf', 'latency', 'speed'], category: 'concern',  status: 'active' },
+    { id: 'cost',         aliases: ['pricing', 'budget'],        category: 'concern',  status: 'active' },
+    { id: 'scalability',  aliases: ['scale', 'capacity'],        category: 'concern',  status: 'active' },
+    { id: 'observability',aliases: ['monitoring', 'tracing'],    category: 'concern',  status: 'active' },
+    { id: 'deprecated',   aliases: ['legacy', 'old'],            category: 'lifecycle', status: 'active' },
+    { id: 'experimental', aliases: ['wip', 'draft', 'poc'],      category: 'lifecycle', status: 'active' },
+  ],
 };
 
 function repoWikiPath(repoRoot, relativePath = '') {
@@ -93,6 +111,7 @@ function ensureTaxonomyRegistry(repoRoot) {
     [DOMAIN_REGISTRY_FILE, DEFAULT_DOMAINS],
     [PRIMARY_TYPE_REGISTRY_FILE, DEFAULT_PRIMARY_TYPES],
     [SUBTYPE_REGISTRY_FILE, DEFAULT_SUBTYPES],
+    [TAG_REGISTRY_FILE, DEFAULT_TAGS],
     [SUGGESTION_QUEUE_FILE, DEFAULT_SUGGESTIONS],
   ];
   for (const [fileName, value] of defaults) {
@@ -109,6 +128,7 @@ function loadTaxonomy(repoRoot) {
     domains: readJsonFile(getRegistryPath(repoRoot, DOMAIN_REGISTRY_FILE), DEFAULT_DOMAINS),
     primaryTypes: readJsonFile(getRegistryPath(repoRoot, PRIMARY_TYPE_REGISTRY_FILE), DEFAULT_PRIMARY_TYPES),
     subtypes: readJsonFile(getRegistryPath(repoRoot, SUBTYPE_REGISTRY_FILE), DEFAULT_SUBTYPES),
+    tags: readJsonFile(getRegistryPath(repoRoot, TAG_REGISTRY_FILE), DEFAULT_TAGS),
     suggestions: readJsonFile(getRegistryPath(repoRoot, SUGGESTION_QUEUE_FILE), DEFAULT_SUGGESTIONS),
   };
 }
@@ -303,6 +323,67 @@ function registerSubtype(repoRoot, value, options = {}) {
   return id;
 }
 
+// Deprecate a taxonomy item (domain, primary_type, or subtype) by setting status='deprecated'.
+// Optionally supply replacedBy to record a canonical replacement.
+function deprecateTaxonomyItem(repoRoot, kind, id, options = {}) {
+  const taxonomy = loadTaxonomy(repoRoot);
+  const normalizedId = normalizeRegistryId(id);
+  const replacedBy = normalizeValue(options.replacedBy || options.replaced_by) || null;
+
+  let registryKey, registryFile;
+  if (kind === 'domain') {
+    registryKey = 'domains';
+    registryFile = DOMAIN_REGISTRY_FILE;
+  } else if (kind === 'primary_type') {
+    registryKey = 'primaryTypes';
+    registryFile = PRIMARY_TYPE_REGISTRY_FILE;
+  } else if (kind === 'subtype') {
+    registryKey = 'subtypes';
+    registryFile = SUBTYPE_REGISTRY_FILE;
+  } else {
+    throw new Error(`deprecateTaxonomyItem: kind must be domain, primary_type, or subtype (got '${kind}')`);
+  }
+
+  const items = taxonomy[registryKey].items;
+  const item = items.find((i) => normalizeRegistryId(i.id) === normalizedId);
+  if (!item) {
+    throw new Error(`taxonomy ${kind} '${id}' not found in registry`);
+  }
+  item.status = 'deprecated';
+  item.deprecated_at = new Date().toISOString();
+  if (replacedBy) {
+    item.replaced_by = replacedBy;
+  }
+  writeJsonFile(getRegistryPath(repoRoot, registryFile), taxonomy[registryKey]);
+  return { kind, id: normalizedId, status: 'deprecated', replaced_by: replacedBy };
+}
+
+// Validate classification fields against the taxonomy registry.
+// Returns { valid: bool, issues: [{field, value, reason}] }
+function validateClassification(repoRoot, fields) {
+  const taxonomy = loadTaxonomy(repoRoot);
+  const domain = normalizeValue(fields.domain);
+  const primaryType = normalizeValue(fields.primary_type || fields.primaryType);
+  const subtype = normalizeValue(fields.subtype);
+  const issues = [];
+
+  function checkField(fieldName, items, value, opts = {}) {
+    if (!value) return;
+    const item = findRegistryItem(items, value, opts);
+    if (!item) {
+      issues.push({ field: fieldName, value, reason: 'unknown' });
+    } else if (item.status === 'deprecated') {
+      issues.push({ field: fieldName, value, reason: 'deprecated', replaced_by: item.replaced_by || null });
+    }
+  }
+
+  checkField('domain', taxonomy.domains.items, domain);
+  checkField('primary_type', taxonomy.primaryTypes.items, primaryType);
+  checkField('subtype', taxonomy.subtypes.items, subtype, { domain, primaryType });
+
+  return { valid: issues.length === 0, issues };
+}
+
 function applySuggestionDecision(repoRoot, decision, options) {
   const taxonomy = loadTaxonomy(repoRoot);
   const kind = normalizeValue(options.kind);
@@ -335,6 +416,7 @@ function getTaxonomySnapshot(repoRoot) {
     domains: taxonomy.domains.items,
     primary_types: taxonomy.primaryTypes.items,
     subtypes: taxonomy.subtypes.items,
+    tags: taxonomy.tags.items,
     pending_suggestions: taxonomy.suggestions.items.filter((item) => item.status === 'pending').length,
   };
 }
@@ -352,14 +434,26 @@ function normalizeClassification(repoRoot, fields, options = {}) {
   const tags = normalizeList(fields.tags);
   const suggestionEntries = [];
 
-  if (domain && !findRegistryItem(taxonomy.domains.items, domain)) {
+  // Check domain: unknown → suggest; deprecated → suggest with replacement hint
+  const domainItem = domain ? findRegistryItem(taxonomy.domains.items, domain) : null;
+  if (domain && !domainItem) {
     suggestionEntries.push({ kind: 'domain', value: domain, domain, primary_type: primaryType, via: options.via, source_path: options.sourcePath });
+  } else if (domainItem && domainItem.status === 'deprecated') {
+    suggestionEntries.push({ kind: 'domain', value: domainItem.replaced_by || domain, domain, primary_type: primaryType, via: options.via, source_path: options.sourcePath });
   }
-  if (primaryType && !findRegistryItem(taxonomy.primaryTypes.items, primaryType)) {
+
+  const primaryTypeItem = primaryType ? findRegistryItem(taxonomy.primaryTypes.items, primaryType) : null;
+  if (primaryType && !primaryTypeItem) {
     suggestionEntries.push({ kind: 'primary_type', value: primaryType, domain, primary_type: primaryType, via: options.via, source_path: options.sourcePath });
+  } else if (primaryTypeItem && primaryTypeItem.status === 'deprecated') {
+    suggestionEntries.push({ kind: 'primary_type', value: primaryTypeItem.replaced_by || primaryType, domain, primary_type: primaryType, via: options.via, source_path: options.sourcePath });
   }
-  if (subtype && !findRegistryItem(taxonomy.subtypes.items, subtype, { domain, primaryType })) {
+
+  const subtypeItem = subtype ? findRegistryItem(taxonomy.subtypes.items, subtype, { domain, primaryType }) : null;
+  if (subtype && !subtypeItem) {
     suggestionEntries.push({ kind: 'subtype', value: subtype, domain, primary_type: primaryType, via: options.via, source_path: options.sourcePath });
+  } else if (subtypeItem && subtypeItem.status === 'deprecated') {
+    suggestionEntries.push({ kind: 'subtype', value: subtypeItem.replaced_by || subtype, domain, primary_type: primaryType, via: options.via, source_path: options.sourcePath });
   }
 
   const suggestedTags = normalizeList(fields.suggested_tags || fields.suggestedTags);
@@ -376,11 +470,24 @@ function normalizeClassification(repoRoot, fields, options = {}) {
   }
   recordSuggestions(repoRoot, suggestionEntries);
 
+  // Collect deprecated warnings for callers that want to surface them
+  const deprecatedWarnings = [];
+  if (domainItem && domainItem.status === 'deprecated') {
+    deprecatedWarnings.push({ field: 'domain', value: domain, replaced_by: domainItem.replaced_by || null });
+  }
+  if (primaryTypeItem && primaryTypeItem.status === 'deprecated') {
+    deprecatedWarnings.push({ field: 'primary_type', value: primaryType, replaced_by: primaryTypeItem.replaced_by || null });
+  }
+  if (subtypeItem && subtypeItem.status === 'deprecated') {
+    deprecatedWarnings.push({ field: 'subtype', value: subtype, replaced_by: subtypeItem.replaced_by || null });
+  }
+
   return {
     domain: domain || null,
     primary_type: primaryType || null,
     subtype: subtype || null,
     tags,
+    deprecated_warnings: deprecatedWarnings.length ? deprecatedWarnings : undefined,
   };
 }
 
@@ -451,6 +558,7 @@ function buildQueryHints(repoRoot, query, options = {}) {
   const normalizedQuery = normalizeValue(query).toLowerCase();
   const tokens = tokenizeQuery(normalizedQuery);
   const runtimeDomains = normalizeList(options.runtimeDomains);
+  const runtimeCollections = normalizeList(options.runtimeCollections);
   const registryDomainHints = matchItems(taxonomy.domains.items, normalizedQuery, tokens);
   const runtimeDomainHints = runtimeDomains.filter((domain) => normalizedQuery.includes(domain.toLowerCase()) || tokens.includes(domain.toLowerCase()));
   const domainHints = Array.from(new Set([...registryDomainHints, ...runtimeDomainHints]));
@@ -464,12 +572,30 @@ function buildQueryHints(repoRoot, query, options = {}) {
       primaryType: primaryTypeHints[0] || '',
     }))
   ));
+  // Collection hints: match known runtime collections against query tokens
+  const collectionHints = runtimeCollections.filter(
+    (col) => normalizedQuery.includes(col.toLowerCase()) || tokens.includes(col.toLowerCase())
+  );
+
+  // Tag hints: match registered tags (controlled vocabulary) against query tokens
+  const tagHints = Array.from(new Set(
+    taxonomy.tags.items
+      .filter((item) => item.status !== 'rejected')
+      .filter((item) => {
+        const tagId = item.id.toLowerCase();
+        const allForms = [tagId, ...normalizeList(item.aliases).map((a) => a.toLowerCase())];
+        return allForms.some((form) => normalizedQuery.includes(form) || tokens.includes(form));
+      })
+      .map((item) => item.id)
+  ));
 
   return {
     tokens,
     domain_hints: domainHints,
     primary_type_hints: primaryTypeHints,
     subtype_hints: subtypeHints,
+    collection_hints: collectionHints,
+    tag_hints: tagHints,
     focus: inferFocus(normalizedQuery),
   };
 }
@@ -477,6 +603,7 @@ function buildQueryHints(repoRoot, query, options = {}) {
 module.exports = {
   applySuggestionDecision,
   buildQueryHints,
+  deprecateTaxonomyItem,
   ensureTaxonomyRegistry,
   getRegistryDir,
   getRegistryPath,
@@ -490,4 +617,5 @@ module.exports = {
   registerDomain,
   registerPrimaryType,
   registerSubtype,
+  validateClassification,
 };

@@ -25,6 +25,22 @@ function repoWikiPath(repoRoot, relativePath) {
   return path.join(repoRoot, '.wiki', relativePath);
 }
 
+function generatePageId() {
+  const timestamp = Date.now().toString(36);
+  const random = Math.random().toString(36).slice(2, 8);
+  return `pg_${timestamp}${random}`;
+}
+
+// Extracts the navigation collection from a target_page path.
+// For "domain/collection/slug" returns "collection"; for "domain/slug" returns "".
+function extractCollection(targetPage) {
+  const parts = (targetPage || '').split('/').filter(Boolean);
+  if (parts.length >= 3) {
+    return parts.slice(1, -1).join('/');
+  }
+  return '';
+}
+
 function slugify(value) {
   return value
     .toLowerCase()
@@ -235,6 +251,7 @@ function createCanon(repoRoot, options) {
   }
   const parts = targetPage.split('/').filter(Boolean);
   const domain = parts[0] || '';
+  const collection = extractCollection(targetPage);
   const classification = normalizeClassification(
     repoRoot,
     {
@@ -255,10 +272,22 @@ function createCanon(repoRoot, options) {
     : typeof options.sources === 'string'
       ? options.sources.split(',').map((item) => item.trim()).filter(Boolean)
       : [];
+  const secondaryDomains = Array.isArray(options.secondary_domains)
+    ? options.secondary_domains.filter(Boolean)
+    : [];
+  // typed_refs: [{target, type}] — structured relationships
+  //   types: see-also | depends-on | supersedes | is-superseded-by | contradicts | is-instance-of
+  const VALID_REF_TYPES = new Set(['see-also', 'depends-on', 'supersedes', 'is-superseded-by', 'contradicts', 'is-instance-of']);
+  const typedRefs = Array.isArray(options.typed_refs)
+    ? options.typed_refs.filter((ref) => ref && ref.target && VALID_REF_TYPES.has(ref.type))
+    : [];
   const frontmatter = {
     type: pageType,
+    page_id: options.pageId || generatePageId(),
     title,
     domain: classification.domain || domain,
+    secondary_domains: secondaryDomains.length ? secondaryDomains : null,
+    collection: collection || null,
     primary_type: classification.primary_type || pageType,
     subtype: classification.subtype,
     sources,
@@ -267,6 +296,7 @@ function createCanon(repoRoot, options) {
     staleness_days: 0,
     last_updated: formatDate(),
     cross_refs: [],
+    typed_refs: typedRefs.length ? typedRefs : [],
     status: 'active',
     tags: classification.tags,
     last_queried_at: null,
@@ -298,28 +328,69 @@ function updateDomainIndex(repoRoot, options) {
     const relPath = wikiRelative(repoRoot, filePath).replace(/^canon\/domains\//, '').replace(/\.md$/, '');
     const { frontmatter } = parseFrontmatterFile(filePath);
     const pageTitle = frontmatter.title || path.basename(filePath, '.md');
-    const category = relPath.split('/').slice(1, -1).join('/') || 'uncategorized';
-    return { relPath, pageTitle, slug: path.basename(filePath, '.md'), category };
+    // collection is the explicit field or the path middle segments
+    const collection = frontmatter.collection || relPath.split('/').slice(1, -1).join('/') || '';
+    return { relPath, pageTitle, slug: path.basename(filePath, '.md'), collection };
   });
 
   const lines = ['# ' + domain + ' 领域', ''];
-  let currentCategory = '';
+  // Group by collection (big-classification bucket within domain)
+  const byCollection = new Map();
   for (const page of pages) {
-    if (page.category !== currentCategory) {
-      lines.push(`## ${page.category}`, '');
-      currentCategory = page.category;
+    const key = page.collection || 'uncategorized';
+    if (!byCollection.has(key)) {
+      byCollection.set(key, []);
     }
-    lines.push(`- [[${page.slug}]] — ${page.pageTitle}`);
+    byCollection.get(key).push(page);
   }
-  if (!pages.length) {
+  if (byCollection.size > 0) {
+    for (const [col, colPages] of byCollection) {
+      lines.push(`## ${col}`, '');
+      for (const page of colPages) {
+        lines.push(`- [[${page.slug}]] — ${page.pageTitle}`);
+      }
+      lines.push('');
+    }
+  } else {
     lines.push('当前暂无活跃页面。');
   }
+
+  // Cross-domain references: pages from other domains that list this domain in secondary_domains
+  const crossDomainPages = [];
+  if (fs.existsSync(domainsRoot)) {
+    for (const entry of fs.readdirSync(domainsRoot, { withFileTypes: true })) {
+      if (!entry.isDirectory() || entry.name === domain) {
+        continue;
+      }
+      for (const filePath of listMarkdownFiles(path.join(domainsRoot, entry.name))) {
+        if (path.basename(filePath) === '_index.md') {
+          continue;
+        }
+        const { frontmatter: pf } = parseFrontmatterFile(filePath);
+        const secondaryDomains = Array.isArray(pf.secondary_domains) ? pf.secondary_domains : [];
+        if (pf.status !== 'archived' && secondaryDomains.includes(domain)) {
+          const relPath = wikiRelative(repoRoot, filePath).replace(/^canon\/domains\//, '').replace(/\.md$/, '');
+          crossDomainPages.push({ relPath, slug: path.basename(filePath, '.md'), pageTitle: pf.title || path.basename(filePath, '.md'), primaryDomain: entry.name });
+        }
+      }
+    }
+  }
+  if (crossDomainPages.length > 0) {
+    lines.push('## cross-domain references', '');
+    for (const page of crossDomainPages) {
+      lines.push(`- [[${page.relPath}]] — ${page.pageTitle} *(primary: ${page.primaryDomain})*`);
+    }
+    lines.push('');
+  }
+
   const frontmatter = {
     type: 'index',
     domain,
     title: `${domain} 领域索引`,
     updated_at: formatDate(),
     pages: pages.map((page) => page.relPath),
+    cross_domain_refs: crossDomainPages.map((page) => page.relPath),
+    collections: Array.from(byCollection.keys()).filter((key) => key !== 'uncategorized'),
     status: 'active',
   };
   writeFrontmatterFile(indexPath, frontmatter, lines.join('\n'));
@@ -802,12 +873,16 @@ function maintainWorkflow(repoRoot, options = {}) {
   const taxonomy = getTaxonomySnapshot(repoRoot);
   updateState(repoRoot, options.applyDecay ? { last_lint: formatDate() } : {});
   const db = openRuntimeIndex(repoRoot);
+  // Separate structural classification signals (S00x) from content lint findings
+  const structuralSignals = findings.filter((item) => item.ruleId.startsWith('S'));
+  const lintFindings = findings.filter((item) => !item.ruleId.startsWith('S'));
   recordOperation(db, 'workflow.maintain', 'ok', {
-    findings: findings.length,
+    findings: lintFindings.length,
+    structural_signals: structuralSignals.length,
     decays: decays.length,
     pending_taxonomy_suggestions: taxonomy.pending_suggestions,
   });
-  return { counts, findings, decays, taxonomy };
+  return { counts, findings: lintFindings, structural_signals: structuralSignals, decays, taxonomy };
 }
 
 function runInternalCommand(repoRoot, args) {
@@ -1207,6 +1282,8 @@ module.exports = {
   createSource,
   decayConfidence,
   dedupCheck,
+  extractCollection,
+  generatePageId,
   importWorkflow,
   maintainWorkflow,
   markCompiled,

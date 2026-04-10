@@ -24,7 +24,16 @@ const {
 } = require('./lib/wiki-repo');
 const { compileApprovedProposal } = require('./lib/compiler');
 const { askWorkflow, importWorkflow, maintainWorkflow, runInternalCommand } = require('./lib/wiki-internal');
-const { applySuggestionDecision, getTaxonomySnapshot, listSuggestions } = require('./lib/taxonomy');
+const { applySuggestionDecision, deprecateTaxonomyItem, getTaxonomySnapshot, listSuggestions, validateClassification } = require('./lib/taxonomy');
+const {
+  OPERATION_TYPES,
+  applyMigrationPlan,
+  createMigrationPlan,
+  dryRunMigrationPlan,
+  listMigrationPlans,
+  loadPlan,
+  rollbackMigrationPlan,
+} = require('./lib/migration');
 
 const COMMAND_NAME = process.env.WIKI_COMMAND_NAME || 'wiki';
 const CONTRACT_VERSION = '1.0';
@@ -132,6 +141,8 @@ function usage() {
   ${COMMAND_NAME} taxonomy suggestions [--status pending|accepted|rejected] [--json]
   ${COMMAND_NAME} taxonomy accept KIND VALUE [--domain NAME] [--primary-type NAME] [--json]
   ${COMMAND_NAME} taxonomy reject KIND VALUE [--domain NAME] [--primary-type NAME] [--reason TEXT] [--json]
+  ${COMMAND_NAME} taxonomy deprecate KIND ID [--replaced-by VALUE] [--json]
+  ${COMMAND_NAME} taxonomy validate DOMAIN [--primary-type TYPE] [--subtype SUBTYPE] [--json]
   ${COMMAND_NAME} review [list] [--json]
   ${COMMAND_NAME} review approve PROPOSAL --by NAME --note TEXT [--json]
   ${COMMAND_NAME} review reject PROPOSAL --by NAME --reason TEXT [--json]
@@ -140,6 +151,12 @@ function usage() {
   ${COMMAND_NAME} apply [run [PROPOSAL] | list] [--json]
   ${COMMAND_NAME} resolve [list] [--json]
   ${COMMAND_NAME} resolve apply PROPOSAL --merged-file FILE --by NAME --as TEXT [--page FILE] [--confidence VALUE] [--json]
+  ${COMMAND_NAME} migrate list [--status STATUS] [--json]
+  ${COMMAND_NAME} migrate plan --op TYPE --scope TEXT --from KEY=VALUE... --to KEY=VALUE... [--reason TEXT] [--json]
+  ${COMMAND_NAME} migrate dry-run PLAN_ID [--json]
+  ${COMMAND_NAME} migrate apply PLAN_ID [--force] [--json]
+  ${COMMAND_NAME} migrate rollback PLAN_ID [--json]
+  ${COMMAND_NAME} migrate show PLAN_ID [--json]
   ${COMMAND_NAME} guide
 
 Public mental model:
@@ -147,7 +164,7 @@ Public mental model:
   ${COMMAND_NAME}      deterministic task front door
 
 Task words:
-  status  check  taxonomy  review  apply  resolve
+  status  check  taxonomy  review  apply  resolve  migrate
 
 Agent workflow contracts:
   ask  import  maintain`);
@@ -314,6 +331,12 @@ function runMaintain(configPath, repoOverride, args) {
   }
   console.log(`Counts: sources=${result.counts.sources} canon=${result.counts.canon} pending=${result.counts.pending} conflicts=${result.counts.conflicts}`);
   console.log(`Findings: ${result.findings.length}`);
+  if (result.structural_signals.length) {
+    console.log(`Structural signals: ${result.structural_signals.length}`);
+    for (const sig of result.structural_signals) {
+      console.log(`  [${sig.ruleId}] ${sig.message}`);
+    }
+  }
   console.log(`Decay actions: ${result.decays.length}`);
   console.log(`Taxonomy pending suggestions: ${result.taxonomy.pending_suggestions}`);
 }
@@ -364,8 +387,47 @@ function runTaxonomy(configPath, repoOverride, args) {
     return;
   }
 
-  if (!['accept', 'reject'].includes(subcommand)) {
+  if (!['accept', 'reject', 'deprecate', 'validate'].includes(subcommand)) {
     die(`unknown subcommand for taxonomy: ${subcommand}`);
+  }
+
+  // taxonomy validate DOMAIN [--primary-type TYPE] [--subtype SUBTYPE] [--json]
+  if (subcommand === 'validate') {
+    const fields = { domain: args[1] || '' };
+    for (let index = 2; index < args.length; index += 1) {
+      const token = args[index];
+      if (token === '--primary-type') { fields.primary_type = args[index + 1] || ''; index += 1; }
+      else if (token === '--subtype') { fields.subtype = args[index + 1] || ''; index += 1; }
+      else if (token !== '--json') { die(`unknown option for taxonomy validate: ${token}`); }
+    }
+    try {
+      const result = validateClassification(repoRoot, fields);
+      if (json) { printJsonResult('wiki.taxonomy.validate', repoRoot, result); return; }
+      if (result.valid) { console.log('Classification is valid.'); return; }
+      for (const issue of result.issues) {
+        console.log(`[${issue.reason.toUpperCase()}] ${issue.field}: ${issue.value}${issue.replaced_by ? ` → use '${issue.replaced_by}'` : ''}`);
+      }
+    } catch (error) { die(error.message); }
+    return;
+  }
+
+  // taxonomy deprecate KIND ID [--replaced-by VALUE] [--json]
+  if (subcommand === 'deprecate') {
+    const kind = args[1];
+    const id = args[2];
+    if (!kind || !id) { die('taxonomy deprecate requires KIND and ID'); }
+    const opts = {};
+    for (let index = 3; index < args.length; index += 1) {
+      const token = args[index];
+      if (token === '--replaced-by') { opts.replacedBy = args[index + 1] || ''; index += 1; }
+      else if (token !== '--json') { die(`unknown option for taxonomy deprecate: ${token}`); }
+    }
+    try {
+      const result = deprecateTaxonomyItem(repoRoot, kind, id, opts);
+      if (json) { printJsonResult('wiki.taxonomy.deprecate', repoRoot, result); return; }
+      console.log(`${result.kind}:${result.id} deprecated${result.replaced_by ? ` → replaced by '${result.replaced_by}'` : ''}`);
+    } catch (error) { die(error.message); }
+    return;
   }
 
   const kind = args[1];
@@ -650,6 +712,194 @@ function runResolve(configPath, repoOverride, args) {
   }
 }
 
+function runMigrate(configPath, repoOverride, args) {
+  const repoRoot = ensureRepoRoot(configPath, repoOverride);
+  const subcommand = !args[0] || args[0].startsWith('--') ? 'list' : args[0];
+  const json = hasFlag(args, '--json');
+
+  if (subcommand === 'list') {
+    let filterStatus = '';
+    for (let index = 1; index < args.length; index += 1) {
+      if (args[index] === '--status') {
+        filterStatus = args[index + 1] || '';
+        index += 1;
+      }
+    }
+    const plans = listMigrationPlans(repoRoot, filterStatus);
+    if (json) {
+      printJsonResult('wiki.migrate.list', repoRoot, { plans, total: plans.length });
+      return;
+    }
+    if (!plans.length) {
+      console.log('No migration plans found.');
+      return;
+    }
+    printTable(
+      ['plan_id', 'op', 'scope', 'risk', 'status', 'pages', 'created'],
+      plans.map((plan) => [plan.plan_id, plan.operation_type, plan.scope, plan.risk_level, plan.status, plan.affected_count, (plan.created_at || '').slice(0, 10)])
+    );
+    return;
+  }
+
+  if (subcommand === 'plan') {
+    const options = { from: {}, to: {} };
+    let parsingFrom = false;
+    let parsingTo = false;
+    for (let index = 1; index < args.length; index += 1) {
+      const token = args[index];
+      switch (token) {
+        case '--op':
+          options.operation_type = args[index + 1] || '';
+          index += 1;
+          parsingFrom = false;
+          parsingTo = false;
+          break;
+        case '--scope':
+          options.scope = args[index + 1] || '';
+          index += 1;
+          parsingFrom = false;
+          parsingTo = false;
+          break;
+        case '--reason':
+          options.reason = args[index + 1] || '';
+          index += 1;
+          parsingFrom = false;
+          parsingTo = false;
+          break;
+        case '--from':
+          parsingFrom = true;
+          parsingTo = false;
+          break;
+        case '--to':
+          parsingTo = true;
+          parsingFrom = false;
+          break;
+        case '--json':
+          break;
+        default:
+          if (parsingFrom && token.includes('=')) {
+            const [key, val] = token.split('=');
+            options.from[key] = val;
+          } else if (parsingTo && token.includes('=')) {
+            const [key, val] = token.split('=');
+            options.to[key] = val;
+          }
+      }
+    }
+    if (!options.operation_type) {
+      die(`migrate plan requires --op (one of: ${OPERATION_TYPES.join(', ')})`);
+    }
+    try {
+      const plan = createMigrationPlan(repoRoot, options);
+      if (json) {
+        printJsonResult('wiki.migrate.plan', repoRoot, { plan });
+        return;
+      }
+      console.log(`Created migration plan: ${plan.plan_id}`);
+      console.log(`  op: ${plan.operation_type}`);
+      console.log(`  scope: ${plan.scope}`);
+      console.log(`  risk: ${plan.risk_level}`);
+      console.log(`  affected pages: ${plan.affected_page_paths.length}`);
+      console.log(`  status: ${plan.status}`);
+      console.log(`Next: wiki migrate dry-run ${plan.plan_id}`);
+    } catch (error) {
+      die(error.message);
+    }
+    return;
+  }
+
+  if (subcommand === 'dry-run') {
+    const planId = args[1];
+    if (!planId) {
+      die('migrate dry-run requires PLAN_ID');
+    }
+    try {
+      const report = dryRunMigrationPlan(repoRoot, planId);
+      if (json) {
+        printJsonResult('wiki.migrate.dry-run', repoRoot, { report });
+        return;
+      }
+      console.log(`Dry-run: ${planId}`);
+      console.log(`  operation: ${report.operation_type}`);
+      console.log(`  affected: ${report.affected_count} pages`);
+      console.log(`  path changes: ${report.path_changes.length}`);
+      console.log(`  taxonomy changes: ${report.taxonomy_changes.length}`);
+      console.log(`  aliases needed: ${report.aliases_needed.length}`);
+      console.log(`  risk: ${report.risk_level}`);
+      if (report.path_changes.length) {
+        console.log('  Path changes:');
+        report.path_changes.slice(0, 5).forEach((item) => console.log(`    ${item.old_path} -> ${item.new_path}`));
+        if (report.path_changes.length > 5) {
+          console.log(`    ... and ${report.path_changes.length - 5} more`);
+        }
+      }
+      console.log(`Next: wiki migrate apply ${planId}`);
+    } catch (error) {
+      die(error.message);
+    }
+    return;
+  }
+
+  if (subcommand === 'apply') {
+    const planId = args[1];
+    if (!planId) {
+      die('migrate apply requires PLAN_ID');
+    }
+    const force = hasFlag(args, '--force');
+    try {
+      const result = applyMigrationPlan(repoRoot, planId, { force });
+      if (json) {
+        printJsonResult('wiki.migrate.apply', repoRoot, { result });
+        return;
+      }
+      console.log(`Applied migration: ${planId}`);
+      console.log(`  changed pages: ${result.applied}`);
+    } catch (error) {
+      die(error.message);
+    }
+    return;
+  }
+
+  if (subcommand === 'rollback') {
+    const planId = args[1];
+    if (!planId) {
+      die('migrate rollback requires PLAN_ID');
+    }
+    try {
+      const result = rollbackMigrationPlan(repoRoot, planId);
+      if (json) {
+        printJsonResult('wiki.migrate.rollback', repoRoot, { result });
+        return;
+      }
+      console.log(`Rolled back: ${planId}`);
+      console.log(`  restored pages: ${result.rolled_back}`);
+    } catch (error) {
+      die(error.message);
+    }
+    return;
+  }
+
+  if (subcommand === 'show') {
+    const planId = args[1];
+    if (!planId) {
+      die('migrate show requires PLAN_ID');
+    }
+    try {
+      const plan = loadPlan(repoRoot, planId);
+      if (json) {
+        printJsonResult('wiki.migrate.show', repoRoot, { plan });
+        return;
+      }
+      console.log(JSON.stringify(plan, null, 2));
+    } catch (error) {
+      die(error.message);
+    }
+    return;
+  }
+
+  die(`unknown subcommand for migrate: ${subcommand}`);
+}
+
 function printGuide(configPath) {
   const repoRoot = resolveRepoRoot(configPath, '');
   console.log('Minimal mental model:');
@@ -900,6 +1150,9 @@ function run(argv) {
       return;
     case 'resolve':
       runResolve(configPath, repoOverride, args.slice(1));
+      return;
+    case 'migrate':
+      runMigrate(configPath, repoOverride, args.slice(1));
       return;
     case 'internal':
       try {

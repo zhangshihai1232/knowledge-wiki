@@ -23,6 +23,14 @@ function normalizeScalar(rawValue) {
     }
     return inner.split(',').map((item) => normalizeScalar(item.trim()));
   }
+  // JSON object/array items (e.g., typed_refs: [{...}])
+  if ((rawValue.startsWith('{') && rawValue.endsWith('}')) || (rawValue.startsWith('[') && rawValue.endsWith(']'))) {
+    try {
+      return JSON.parse(rawValue);
+    } catch {
+      // fall through to string
+    }
+  }
   if (rawValue === 'true') {
     return true;
   }
