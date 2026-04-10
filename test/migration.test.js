@@ -762,3 +762,73 @@ test('Fix6: findMatchingPages with include_secondary finds cross-domain pages', 
   assert.ok(withFlag.some(p => p.path.includes('cross-domain-page')),
     'with include_secondary: true, cross-domain page should be included in results');
 });
+
+test('Fix7: applyMigrationPlan pre-flight rejects all collisions before touching any file', (t) => {
+  const repoPath = makeTempRepo(t);
+  registerDomain(repoPath, 'ai', { label: 'AI' });
+  const { createMigrationPlan, dryRunMigrationPlan, applyMigrationPlan } = require('../src/lib/migration');
+
+  // Create two source pages
+  createCanon(repoPath, { targetPage: 'ai/src-a', type: 'concept', title: 'Src A', sources: [] });
+  createCanon(repoPath, { targetPage: 'ai/src-b', type: 'concept', title: 'Src B', sources: [] });
+
+  // Create ONE destination collision (src-a destination already exists)
+  createCanon(repoPath, { targetPage: 'ai/concepts/src-a', type: 'concept', title: 'Dest A Existing', sources: [] });
+
+  const plan = createMigrationPlan(repoPath, {
+    operation_type: 'reclassify',
+    from: { domain: 'ai' },
+    to: { domain: 'ai', collection: 'concepts' },
+    reason: 'Pre-flight test',
+  });
+  dryRunMigrationPlan(repoPath, plan.plan_id);
+
+  // Apply should throw on collision without having moved src-b
+  assert.throws(
+    () => applyMigrationPlan(repoPath, plan.plan_id),
+    /reclassify collision/,
+    'Expected collision error'
+  );
+
+  // Verify src-b was NOT moved (pre-flight check happened before any file operations)
+  const srcBPath = path.join(repoPath, '.wiki', 'canon', 'domains', 'ai', 'src-b.md');
+  assert.ok(fs.existsSync(srcBPath), 'src-b.md must still exist at original path (no partial migration)');
+});
+
+test('Fix8: rollbackMigrationPlan removes alias entries for moved pages', (t) => {
+  const repoPath = makeTempRepo(t);
+  registerDomain(repoPath, 'domain-a', { label: 'Domain A' });
+  registerDomain(repoPath, 'domain-b', { label: 'Domain B' });
+  const { createMigrationPlan, dryRunMigrationPlan, applyMigrationPlan, rollbackMigrationPlan } = require('../src/lib/migration');
+  const { loadAliases } = require('../src/lib/alias');
+
+  createCanon(repoPath, { targetPage: 'domain-a/page-to-move', type: 'concept', title: 'Movable Page', sources: [] });
+
+  const plan = createMigrationPlan(repoPath, {
+    operation_type: 'reclassify',
+    from: { domain: 'domain-a' },
+    to: { domain: 'domain-b' },
+    reason: 'Rollback alias test',
+  });
+  dryRunMigrationPlan(repoPath, plan.plan_id);
+  applyMigrationPlan(repoPath, plan.plan_id);
+
+  // After apply, alias must be recorded
+  const aliasesAfterApply = loadAliases(repoPath);
+  const hasAlias = Object.values(aliasesAfterApply.path_map || {}).length > 0 ||
+    Object.keys(aliasesAfterApply.path_map || {}).some(k => k.includes('domain-a'));
+  // The alias key is the OLD path (domain-a/page-to-move.md)
+  assert.ok(
+    Object.keys(aliasesAfterApply.path_map || {}).some(k => k.includes('domain-a')),
+    'After apply, alias for old path must exist'
+  );
+
+  rollbackMigrationPlan(repoPath, plan.plan_id);
+
+  // After rollback, alias must be removed
+  const aliasesAfterRollback = loadAliases(repoPath);
+  assert.ok(
+    !Object.keys(aliasesAfterRollback.path_map || {}).some(k => k.includes('domain-a/page-to-move')),
+    'After rollback, old path alias must be removed from aliases.json'
+  );
+});

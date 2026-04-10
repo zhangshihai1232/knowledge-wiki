@@ -140,15 +140,16 @@ quality_gates:
 
 #### 2.3 `organize`
 
-先执行 `wiki maintain --json` 获取 L001–L012 lint 统计，再按下表选择子路由：
+先执行 `wiki maintain --json` 获取 L001–L012 lint 统计，再按下表选择子路由（优先级从高到低）：
 
-| 触发条件 | 路由到 |
-|---------|--------|
-| changes/ 队列中存在 `action=update` 且冲突标记（L006） | `reconcile.md` |
-| L002（过时页面）= 1-2 个，无冲突 | `refresh.md` |
-| L002 ≥ 3，或 L007（领域溢出），或 L004（引用腐烂） | `maintain.md` |
-| L012（未分类页面）≥ 1 | `maintain.md`（启动 reclassify 计划） |
-| 用户说"整理"但队列为空、lint 全绿 | `maintain.md`（默认，输出健康报告）|
+| 优先级 | 触发条件 | 路由到 |
+|--------|---------|--------|
+| 1（最高） | `changes/conflicts/` 目录存在待处理文件（编译冲突） | `reconcile.md` |
+| 2 | L007（领域溢出）≥ 1 | `maintain.md`（启动领域分裂计划） |
+| 3 | L002（过时页面）≥ 3，或 L004（引用腐烂） | `maintain.md` |
+| 4 | L012（未分类页面）≥ 5 | `maintain.md`（启动 reclassify 计划） |
+| 5 | L002 = 1-4 个，无冲突 | `refresh.md` |
+| 6（默认） | 用户说"整理"但队列为空、lint 全绿 | `maintain.md`（输出健康报告）|
 
 #### 2.4 `govern`
 
@@ -298,7 +299,7 @@ Audit 视图固定返回 5 段：
 
 内部路由：
 - 一级路由：{answer | absorb | organize | govern}
-- 二级动作：{query / ingest / reconcile / refresh / maintain / migrate / write-back}
+- 二级动作：{query / ingest / reconcile / refresh / maintain / migrate / deprecate / write-back}
 
 系统动作：
 - 是否生成 proposal：{yes/no}

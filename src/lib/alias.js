@@ -69,6 +69,8 @@ function listAliases(repoRoot) {
 
 module.exports = {
   listAliases,
+  loadAliases,
+  saveAliases,
   recordPathAlias,
   recordTaxonomyAlias,
   resolvePathAlias,

@@ -3,9 +3,10 @@
 const fs = require('fs');
 const path = require('path');
 const { parseFrontmatterFile, updateFrontmatterFile } = require('./frontmatter');
-const { openRuntimeIndex, syncRuntimeFiles } = require('./runtime-index');
+const { openRuntimeIndex, syncRuntimeFiles, escapeLike } = require('./runtime-index');
 const { recordPathAlias, recordTaxonomyAlias } = require('./alias');
-const { deprecateTaxonomyItem } = require('./taxonomy');
+const { loadAliases, saveAliases } = require('./alias');
+const { deprecateTaxonomyItem, getTaxonomySnapshot } = require('./taxonomy');
 const { listMarkdownFiles, normalizePath } = require('./utils');
 
 const MIGRATIONS_DIR = 'migrations';
@@ -100,9 +101,11 @@ function findMatchingPages(repoRoot, filter) {
   const params = [];
   if (filter.domain) {
     if (filter.include_secondary) {
-      // Match primary domain OR secondary_domains_json contains the domain value
-      conditions.push("(domain = ? OR secondary_domains_json LIKE ?)");
-      params.push(filter.domain, `%"${filter.domain}"%`);
+      // Match primary domain OR secondary_domains_json contains the domain value.
+      // Escape LIKE special chars (_, %) to prevent domain names like "ai_tools" from mismatching.
+      const likePattern = `%"${escapeLike(filter.domain)}"%`;
+      conditions.push("(domain = ? OR secondary_domains_json LIKE ? ESCAPE '\\')");
+      params.push(filter.domain, likePattern);
     } else {
       conditions.push('domain = ?');
       params.push(filter.domain);
@@ -334,6 +337,14 @@ function applyMergePages(repoRoot, plan, planId) {
   const archivedSources = [];
   const rollbackEntries = [];
 
+  // Guard: target must exist before archiving sources to prevent knowledge loss.
+  if (!fs.existsSync(targetAbsPath)) {
+    throw new Error(
+      `merge-pages: target page does not exist: ${targetWikiPath}. ` +
+      'Create the target page first (via wiki import or wiki internal create-canon), then apply.'
+    );
+  }
+
   for (const srcPath of sourcePaths) {
     const srcAbsPath = path.join(repoRoot, '.wiki', srcPath);
     if (!fs.existsSync(srcAbsPath)) {
@@ -437,6 +448,35 @@ function applyMigrationPlan(repoRoot, planId, options = {}) {
   const rollbackEntries = [];
   const appliedChanges = [];
 
+  // Pre-flight: verify ALL destination paths are collision-free before touching any file.
+  // This prevents leaving the wiki in a half-migrated state if a collision is discovered mid-loop.
+  if (plan.to.domain || plan.to.collection !== undefined) {
+    const collisions = [];
+    for (const page of affectedPages) {
+      const oldRelPath = page.path.replace(/^canon\/domains\//, '').replace(/\.md$/, '');
+      const pathParts = oldRelPath.split('/');
+      const oldDomain = pathParts[0];
+      const oldSlug = pathParts[pathParts.length - 1];
+      const newDomain = plan.to.domain || oldDomain;
+      const newCollection = plan.to.collection !== undefined
+        ? plan.to.collection
+        : (pathParts.length >= 3 ? pathParts.slice(1, -1).join('/') : '');
+      const newRelPath = newCollection ? `${newDomain}/${newCollection}/${oldSlug}` : `${newDomain}/${oldSlug}`;
+      const newAbsPath = path.join(repoRoot, '.wiki', 'canon', 'domains', `${newRelPath}.md`);
+      const oldAbsPath = path.join(repoRoot, '.wiki', page.path);
+      if (newAbsPath !== oldAbsPath && fs.existsSync(newAbsPath)) {
+        collisions.push(wikiRelative(repoRoot, newAbsPath));
+      }
+    }
+    if (collisions.length > 0) {
+      throw new Error(
+        `reclassify collision: ${collisions.length} destination path(s) already exist:\n` +
+        collisions.map((p) => `  - ${p}`).join('\n') +
+        '\nResolve collisions (merge/rename/skip) before applying.'
+      );
+    }
+  }
+
   for (const page of affectedPages) {
     const absolutePath = path.join(repoRoot, '.wiki', page.path);
     if (!fs.existsSync(absolutePath)) {
@@ -525,13 +565,15 @@ function applyMigrationPlan(repoRoot, planId, options = {}) {
   }
   if (plan.operation_type === 'merge-subtype' && plan.from.subtype && plan.to.subtype) {
     recordTaxonomyAlias(repoRoot, 'subtype', plan.from.subtype, plan.to.subtype);
-    // Deprecate the merged-away subtype if it exists in the registry (graceful if not registered)
-    try {
+    // Deprecate merged-away subtype if it is formally registered (LBYL — avoids brittle string match)
+    const snapshot = getTaxonomySnapshot(repoRoot);
+    const subtypeIsRegistered = snapshot.subtypes.some(
+      (s) => s.id === plan.from.subtype && s.status !== 'deprecated'
+    );
+    if (subtypeIsRegistered) {
       deprecateTaxonomyItem(repoRoot, 'subtype', plan.from.subtype, { replaced_by: plan.to.subtype });
-    } catch (e) {
-      if (!e.message.includes('not found in registry')) throw e;
-      // Subtype was used in page frontmatter but not formally registered — alias is sufficient
     }
+    // If not registered: alias is sufficient — unregistered subtypes used only in frontmatter
   }
 
   // Write migration log
@@ -611,6 +653,21 @@ function rollbackMigrationPlan(repoRoot, planId) {
       updateFrontmatterFile(targetAbsPath, { typed_refs: originalRefs });
       syncRuntimeFiles(repoRoot, [targetAbsPath]);
     }
+  }
+
+  // Clean up path aliases that were recorded during apply for moved pages.
+  // Without this, resolvePathAlias("old/path.md") would still return a page_id
+  // even after the path has been restored to its original location.
+  const aliases = loadAliases(repoRoot);
+  let aliasChanged = false;
+  for (const entry of plan.rollback_plan.entries) {
+    if (entry.new_path && aliases.path_map[entry.path]) {
+      delete aliases.path_map[entry.path];
+      aliasChanged = true;
+    }
+  }
+  if (aliasChanged) {
+    saveAliases(repoRoot, aliases);
   }
 
   const logPath = getMigrationLogPath(repoRoot);

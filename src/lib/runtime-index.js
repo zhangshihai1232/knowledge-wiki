@@ -209,37 +209,44 @@ function upsertPageFile(db, repoRoot, filePath) {
   const primaryType = frontmatter.primary_type || frontmatter.type || '';
   const subtype = frontmatter.subtype || '';
 
-  deleteIndexedPath(db, relPath);
-  db.prepare(`
-    INSERT INTO pages (
-      path, title, domain, category, slug, primary_type, subtype, tags_json, status, confidence, last_updated,
-      last_compiled, staleness_days, source_count, content, meta_json, page_id, collection, secondary_domains_json
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(
-    relPath,
-    frontmatter.title || '',
-    domain,
-    category,
-    slug,
-    primaryType,
-    subtype,
-    JSON.stringify(tags),
-    frontmatter.status || 'active',
-    frontmatter.confidence || '',
-    frontmatter.last_updated || '',
-    frontmatter.last_compiled || '',
-    Number.parseInt(frontmatter.staleness_days || 0, 10) || 0,
-    sources.length,
-    body,
-    JSON.stringify(frontmatter),
-    frontmatter.page_id || null,
-    collection,
-    JSON.stringify(secondaryDomains)
-  );
-  db.prepare('INSERT INTO page_fts (path, title, content) VALUES (?, ?, ?)').run(relPath, frontmatter.title || '', body);
-  const insertLink = db.prepare('INSERT OR IGNORE INTO links (source_path, target_slug) VALUES (?, ?)');
-  for (const ref of crossRefs) {
-    insertLink.run(relPath, String(ref));
+  db.exec('BEGIN');
+  try {
+    deleteIndexedPath(db, relPath);
+    db.prepare(`
+      INSERT INTO pages (
+        path, title, domain, category, slug, primary_type, subtype, tags_json, status, confidence, last_updated,
+        last_compiled, staleness_days, source_count, content, meta_json, page_id, collection, secondary_domains_json
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      relPath,
+      frontmatter.title || '',
+      domain,
+      category,
+      slug,
+      primaryType,
+      subtype,
+      JSON.stringify(tags),
+      frontmatter.status || 'active',
+      frontmatter.confidence || '',
+      frontmatter.last_updated || '',
+      frontmatter.last_compiled || '',
+      Number.parseInt(frontmatter.staleness_days || 0, 10) || 0,
+      sources.length,
+      body,
+      JSON.stringify(frontmatter),
+      frontmatter.page_id || null,
+      collection,
+      JSON.stringify(secondaryDomains)
+    );
+    db.prepare('INSERT INTO page_fts (path, title, content) VALUES (?, ?, ?)').run(relPath, frontmatter.title || '', body);
+    const insertLink = db.prepare('INSERT OR IGNORE INTO links (source_path, target_slug) VALUES (?, ?)');
+    for (const ref of crossRefs) {
+      insertLink.run(relPath, String(ref));
+    }
+    db.exec('COMMIT');
+  } catch (err) {
+    db.exec('ROLLBACK');
+    throw err;
   }
 }
 
@@ -247,25 +254,32 @@ function upsertSourceFile(db, repoRoot, filePath) {
   const relPath = wikiRelative(repoRoot, filePath);
   const { frontmatter, body } = parseFrontmatterFile(filePath);
   const tags = Array.isArray(frontmatter.tags) ? frontmatter.tags : [];
-  deleteIndexedPath(db, relPath);
-  db.prepare(`
-    INSERT INTO sources (
-      path, title, source_kind, domain, primary_type, subtype, tags_json, authority, ingested_at, extracted, content, meta_json
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(
-    relPath,
-    frontmatter.title || '',
-    frontmatter.source_kind || '',
-    frontmatter.domain || '',
-    frontmatter.primary_type || 'source',
-    frontmatter.subtype || '',
-    JSON.stringify(tags),
-    frontmatter.authority || '',
-    frontmatter.ingested_at || '',
-    String(frontmatter.extracted ?? ''),
-    body,
-    JSON.stringify(frontmatter)
-  );
+  db.exec('BEGIN');
+  try {
+    deleteIndexedPath(db, relPath);
+    db.prepare(`
+      INSERT INTO sources (
+        path, title, source_kind, domain, primary_type, subtype, tags_json, authority, ingested_at, extracted, content, meta_json
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      relPath,
+      frontmatter.title || '',
+      frontmatter.source_kind || '',
+      frontmatter.domain || '',
+      frontmatter.primary_type || 'source',
+      frontmatter.subtype || '',
+      JSON.stringify(tags),
+      frontmatter.authority || '',
+      frontmatter.ingested_at || '',
+      String(frontmatter.extracted ?? ''),
+      body,
+      JSON.stringify(frontmatter)
+    );
+    db.exec('COMMIT');
+  } catch (err) {
+    db.exec('ROLLBACK');
+    throw err;
+  }
 }
 
 function upsertProposalFile(db, repoRoot, filePath) {
@@ -273,47 +287,54 @@ function upsertProposalFile(db, repoRoot, filePath) {
   const { frontmatter, body } = parseFrontmatterFile(filePath);
   const targetPage = frontmatter.target_page || '';
   const tags = Array.isArray(frontmatter.tags) ? frontmatter.tags : [];
-  deleteIndexedPath(db, relPath);
-  db.prepare(`
-    INSERT INTO proposals (
-      path, status, action, target_page, domain, primary_type, subtype, tags_json, origin, trigger_source, proposed_at, reviewed_at,
-      reviewed_by, compiled, conflict_location, content, meta_json
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(
-    relPath,
-    frontmatter.status || path.basename(path.dirname(filePath)),
-    frontmatter.action || '',
-    targetPage,
-    frontmatter.domain || targetPage.split('/').filter(Boolean)[0] || '',
-    frontmatter.primary_type || frontmatter.target_type || '',
-    frontmatter.subtype || '',
-    JSON.stringify(tags),
-    frontmatter.origin || '',
-    frontmatter.trigger_source || '',
-    frontmatter.proposed_at || '',
-    frontmatter.reviewed_at || '',
-    frontmatter.reviewed_by || '',
-    String(frontmatter.compiled ?? ''),
-    frontmatter.conflict_location || '',
-    body,
-    JSON.stringify(frontmatter)
-  );
-  db.prepare('INSERT INTO proposal_fts (path, target_page, content) VALUES (?, ?, ?)').run(
-    relPath,
-    frontmatter.target_page || '',
-    body
-  );
-
-  if (frontmatter.reviewed_at && (frontmatter.status === 'approved' || frontmatter.status === 'rejected')) {
-    db.prepare(
-      'INSERT OR REPLACE INTO reviews (proposal_path, decision, reviewed_by, reviewed_at, note) VALUES (?, ?, ?, ?, ?)'
-    ).run(
+  db.exec('BEGIN');
+  try {
+    deleteIndexedPath(db, relPath);
+    db.prepare(`
+      INSERT INTO proposals (
+        path, status, action, target_page, domain, primary_type, subtype, tags_json, origin, trigger_source, proposed_at, reviewed_at,
+        reviewed_by, compiled, conflict_location, content, meta_json
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
       relPath,
-      frontmatter.status,
-      frontmatter.reviewed_by || '',
+      frontmatter.status || path.basename(path.dirname(filePath)),
+      frontmatter.action || '',
+      targetPage,
+      frontmatter.domain || targetPage.split('/').filter(Boolean)[0] || '',
+      frontmatter.primary_type || frontmatter.target_type || '',
+      frontmatter.subtype || '',
+      JSON.stringify(tags),
+      frontmatter.origin || '',
+      frontmatter.trigger_source || '',
+      frontmatter.proposed_at || '',
       frontmatter.reviewed_at || '',
-      frontmatter.approve_note || frontmatter.rejection_reason || ''
+      frontmatter.reviewed_by || '',
+      String(frontmatter.compiled ?? ''),
+      frontmatter.conflict_location || '',
+      body,
+      JSON.stringify(frontmatter)
     );
+    db.prepare('INSERT INTO proposal_fts (path, target_page, content) VALUES (?, ?, ?)').run(
+      relPath,
+      frontmatter.target_page || '',
+      body
+    );
+
+    if (frontmatter.reviewed_at && (frontmatter.status === 'approved' || frontmatter.status === 'rejected')) {
+      db.prepare(
+        'INSERT OR REPLACE INTO reviews (proposal_path, decision, reviewed_by, reviewed_at, note) VALUES (?, ?, ?, ?, ?)'
+      ).run(
+        relPath,
+        frontmatter.status,
+        frontmatter.reviewed_by || '',
+        frontmatter.reviewed_at || '',
+        frontmatter.approve_note || frontmatter.rejection_reason || ''
+      );
+    }
+    db.exec('COMMIT');
+  } catch (err) {
+    db.exec('ROLLBACK');
+    throw err;
   }
 }
 
@@ -739,6 +760,7 @@ function searchRuntimeIndex(repoRoot, query, limit = 5) {
 
 module.exports = {
   ensureDatabase,
+  escapeLike,
   getDatabasePath,
   getRuntimeDir,
   hasRuntimeIndexData,

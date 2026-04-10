@@ -874,15 +874,22 @@ function maintainWorkflow(repoRoot, options = {}) {
   updateState(repoRoot, options.applyDecay ? { last_lint: formatDate() } : {});
   const db = openRuntimeIndex(repoRoot);
   // Separate structural classification signals (S00x) from content lint findings
-  const structuralSignals = findings.filter((item) => item.ruleId.startsWith('S'));
-  const lintFindings = findings.filter((item) => !item.ruleId.startsWith('S'));
+  const structuralSignals = findings.filter((item) => item.rule.startsWith('S'));
+  const lintFindings = findings.filter((item) => !item.rule.startsWith('S'));
   recordOperation(db, 'workflow.maintain', 'ok', {
     findings: lintFindings.length,
     structural_signals: structuralSignals.length,
     decays: decays.length,
     pending_taxonomy_suggestions: taxonomy.pending_suggestions,
   });
-  return { counts, findings: lintFindings, structural_signals: structuralSignals, decays, taxonomy };
+  return {
+    counts,
+    findings: lintFindings,
+    structural_signals: structuralSignals,
+    unclassified_pages: lintFindings.filter((f) => f.rule === 'L012').length,
+    decays,
+    taxonomy,
+  };
 }
 
 function runInternalCommand(repoRoot, args) {

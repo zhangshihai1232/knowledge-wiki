@@ -74,36 +74,43 @@ quality_gates:
 
 若意图不够明确（如仅说"整理一下 AI 领域"），必须追问：**要改的是路径位置还是分类标签？影响多少页面？**
 
-### Step 2 ⚙️：创建迁移计划（dry-run 模式）
+### Step 2 ⚙️：创建迁移计划
 
 ```bash
 # reclassify 示例：将指定页面从旧领域迁移到新领域
 wiki migrate plan \
   --op reclassify \
   --from domain=ai/concepts \
-  --to domain=ai/rag \
-  --dry-run
+  --to domain=ai/rag
 
 # rename-domain 示例
 wiki migrate plan \
   --op rename-domain \
   --from devops \
-  --to platform-engineering \
-  --dry-run
+  --to platform-engineering
 
-# 批量处理未分类页面
+# 批量处理未分类页面（include_secondary 可匹配次要分类中的页面）
 wiki migrate plan \
   --op reclassify \
-  --filter subtype_is_null=true \
-  --dry-run
+  --filter subtype_is_null=true
 
 # 合并重复页面（指定主页面和源页面）
 wiki migrate plan \
   --op merge-pages \
   --primary canon/domains/ai/rag/retrieval-augmented-generation.md \
-  --sources canon/domains/ai/concepts/rag-overview.md \
-  --dry-run
+  --sources canon/domains/ai/concepts/rag-overview.md
 ```
+
+`--from` 过滤参数说明：
+
+| 参数 | 说明 |
+|------|------|
+| `domain=<name>` | 匹配主分类域名 |
+| `subtype=<name>` | 匹配子类型 |
+| `include_secondary=true` | 同时匹配 secondary_domains 中的领域（次要分类） |
+| `subtype_is_null=true` | 仅匹配 subtype 为空的页面（未精细分类） |
+
+> ⚠️ `--dry-run` 不是 `plan` 的参数。创建计划后，用 `wiki migrate dry-run <plan_id>` 单独执行预检。
 
 dry-run 输出包含：
 - 受影响页面列表（page_id、旧路径、新路径）
@@ -138,25 +145,37 @@ Cross-ref 风险：⚠️ 3 处引用将断裂（见下方列表）
 **Collision 处理（若存在）**：
 
 若 dry-run 发现目标路径已存在页面，必须暂停并给出三选一问题：
-1. **合并**：将源页面合并到目标页面（切换 op 为 merge-pages）
-2. **重命名**：为源页面选择不冲突的新路径
-3. **放弃**：跳过该页面，其余正常迁移
+1. **合并**：将源页面合并到目标页面 → 创建新的 merge-pages 计划：
+   ```bash
+   wiki migrate plan --op merge-pages \
+     --primary <目标路径> \
+     --sources <冲突源路径>
+   wiki migrate dry-run <new_plan_id>
+   wiki migrate apply <new_plan_id>
+   ```
+2. **重命名**：为源页面选择不冲突的新路径 → 修改 `--to` 参数重新创建计划
+3. **放弃**：跳过该页面，其余正常迁移 → 从计划中排除冲突页面后重新创建计划
 
 ### Step 4 ⚙️：执行迁移
 
 ```bash
-# 标记 plan 为 reviewed（dry-run 已检视）
-wiki migrate review <plan_id>
+# 执行预检（必须在 apply 前执行）
+wiki migrate dry-run <plan_id>
 
-# 执行迁移
+# 执行迁移（dry-run 无 collision 后）
 wiki migrate apply <plan_id>
 ```
+
+> ⚠️ `wiki migrate review <plan_id>` 命令**不存在**。  
+> dry-run 执行成功（0 collision）后，plan status 自动置为 `reviewed`，无需单独确认命令。
 
 apply 操作保证：
 1. 文件系统路径变更（`fs.renameSync`）
 2. SQLite 索引更新（upsertPageFile）
 3. alias 记录写入（aliases.json：旧路径 → page_id）
 4. plan status 更新为 `applied`
+
+**merge-subtype 特殊行为**：`apply` 执行后，`--from.subtype` 指定的旧子类型会自动调用 `wiki taxonomy deprecate` 将其标记为 deprecated（前提是该 subtype 已在 taxonomy registry 中注册）。若尚未注册则跳过。
 
 ### Step 5 ⚙️🧠：迁移后验证
 
@@ -183,7 +202,13 @@ wiki migrate rollback <plan_id>
 ```
 
 rollback 要求：plan status = `applied`（未 apply 的计划不可回滚）。
-回滚后：文件路径恢复，SQLite 索引恢复，alias 条目保留（不删除，避免旧链接彻底断裂）。
+回滚后：
+- 文件路径恢复到原位置
+- SQLite 索引恢复（syncRuntimeFiles）
+- **alias 条目清除**：aliases.json 中本次迁移新增的路径映射会被删除（路径已恢复原位，别名无意义）
+- plan status 更新为 `rolled-back`
+
+> ⚠️ `rolled-back` 状态的计划**不可重新 apply**，需重新执行 `wiki migrate plan` 创建新计划。
 
 ---
 
@@ -226,7 +251,7 @@ L007 signal：ai-tools 域已有 62 页，超过阈值 50。
 | 页面内容需要更新 | `ingest` → `compile` |
 | 页面结构/路径需要调整 | `migrate`（本 spec） |
 | 内容矛盾（两页面说法不同） | `reconcile` → Step 3 → 若根因是路径错误则 → `migrate` |
-| 域页面过多（L007） | `lint` 发现 → `maintain Section 1` → `migrate rename-domain` |
+| 域页面过多（L007） | `lint` 发现 → `maintain Section 1` → `migrate reclassify`（按主题拆分到子域）|
 | 未分类页面过多（L012） | `lint` 发现 → `maintain Section 7` → `migrate reclassify` |
 | taxonomy 废弃 | `migrate deprecate` → `validateClassification` 检测废弃警告 |
 
@@ -248,13 +273,14 @@ L007 signal：ai-tools 域已有 62 页，超过阈值 50。
 ```
 AI 执行：
 1. 🧠 识别意图：reclassify，from=ai/concepts（过滤 subtype=rag），to=ai/rag
-2. ⚙️ wiki migrate plan --op reclassify --from domain=ai/concepts --filter subtype=rag --to domain=ai/rag --dry-run
-3. 🤝 展示结果：发现 5 页，0 collision，2 处 cross_ref 风险，等待确认
-4. 🤝 用户回复"批准"
-5. ⚙️ wiki migrate review <plan_id> && wiki migrate apply <plan_id>
-6. ⚙️ wiki internal scan --rule L004（验证 cross_ref）
-7. ⚙️ 修复 2 处 cross_ref（frontmatter set）
-8. 输出：迁移完成，5 页已移动，2 处引用已更新，alias 已记录
+2. ⚙️ wiki migrate plan --op reclassify --from domain=ai/concepts --filter subtype=rag --to domain=ai/rag
+3. ⚙️ wiki migrate dry-run <plan_id>
+4. 🤝 展示结果：发现 5 页，0 collision，2 处 cross_ref 风险，等待确认
+5. 🤝 用户回复"批准"
+6. ⚙️ wiki migrate apply <plan_id>
+7. ⚙️ wiki internal scan --rule L004（验证 cross_ref）
+8. ⚙️ 修复 2 处 cross_ref（frontmatter set）
+9. 输出：迁移完成，5 页已移动，2 处引用已更新，alias 已记录
 
 AI 输出（前台）：
 

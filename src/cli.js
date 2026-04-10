@@ -224,7 +224,7 @@ function runCheck(configPath, repoOverride, args) {
 
   printTable(
     ['severity', 'rule', 'target', 'message'],
-    findings.map((item) => [item.severity, item.ruleId, item.targetPath, item.message])
+    findings.map((item) => [item.severity, item.rule, item.targetPath, item.message])
   );
 }
 
@@ -334,7 +334,7 @@ function runMaintain(configPath, repoOverride, args) {
   if (result.structural_signals.length) {
     console.log(`Structural signals: ${result.structural_signals.length}`);
     for (const sig of result.structural_signals) {
-      console.log(`  [${sig.ruleId}] ${sig.message}`);
+      console.log(`  [${sig.rule}] ${sig.message}`);
     }
   }
   console.log(`Decay actions: ${result.decays.length}`);
