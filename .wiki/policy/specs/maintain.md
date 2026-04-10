@@ -40,6 +40,8 @@ quality_gates:
 | lint 报告出现 **L007**（领域溢出） | 某领域页面数超过 50，已超出可维护上限 |
 | lint 报告出现 **≥3 条 L002**（陈旧页面） | 集中出现说明某领域整体失活，不宜逐页处理 |
 | `changes/approved/` 中出现 `origin=lint-patrol` 的 proposal | 表示 lint 已将治理问题汇总成维护提案，并经 promote 批准，需要正式执行 |
+| `wiki maintain --json` 报告 `unclassified_pages > 0` | 存在缺失 subtype 的页面，需批量补充分类 |
+| `wiki taxonomy suggestions` 中出现 deprecated domain/subtype 的替换建议 | taxonomy 已演进，存量页面需通过迁移同步到新分类谱系 |
 | 人工明确下达维护指令 | 例如："请对 `ai-tools` 领域做一次全面清理" |
 
 **不触发本 spec 的情形**：单页 L002（由 refresh spec 处理）、格式错误 L001（由 lint 自动修复）。
@@ -52,16 +54,50 @@ quality_gates:
 
 **触发**：某领域页面数 > 50（L007）。
 
-**操作**：
-- 按主题或时间维度将该领域拆分为 2 个或更多子领域
-- 在原领域路径下保留过渡性 `_index.md`，内容仅含子领域导航链接
-- 将各页面移动至对应子领域目录，更新所有 `cross_refs` 中指向原路径的引用
-- 在 STATE.md 中新增子领域条目，删除或降级原领域条目
+**操作（通过 migration 工作流执行）**：
+
+领域分裂必须通过 `wiki migrate` 工作流完成，**禁止直接调用 `wiki internal` 移动文件**，以确保 dry-run 预览、reclassify collision 检测和 rollback 能力完整可用。
+
+```bash
+# 1. 生成迁移计划（对每个目标子域分别创建一个计划）
+wiki migrate plan \
+  --op reclassify \
+  --scope "domain-split: {old-domain} → {sub-a}" \
+  --from domain={old-domain} subtype={主题A关键词} \
+  --to domain={sub-a} \
+  --reason "L007: 页面数超过50上限，按主题拆分" \
+  --json
+# 记录返回的 PLAN_ID
+
+# 2. 预演（必须先于 apply，不修改任何文件）
+wiki migrate dry-run PLAN_ID --json
+# 检查 affected_pages 列表与预期是否一致；若有误则修改 from 过滤条件后重新 dry-run
+
+# 3. 人工批准后执行
+wiki migrate apply PLAN_ID --json
+# 若返回 reclassify collision 错误：先解决冲突页面，再重试 apply
+
+# 4. 对 subtype_is_null 的剩余未分类页面单独创建计划，或手动逐一处理
+wiki migrate plan \
+  --op reclassify \
+  --scope "domain-split: {old-domain} unclassified remainder" \
+  --from domain={old-domain} subtype_is_null=true \
+  --to domain={sub-b} \
+  --json
+
+# 5. 完成后 MOC 重组
+wiki internal update-index --domain {sub-a} --sync
+wiki internal update-index --domain {sub-b} --sync
+
+# 6. 若需全部回滚
+wiki migrate rollback PLAN_ID --json
+```
 
 **约束**：
 - 分裂方案须由人工明确批准（不可仅凭 AI 判断执行）
 - 分裂后每个子领域页面数须 ≤ 50
 - 禁止将单个页面拆分；分裂单位为领域（目录）
+- `reclassify collision` 错误表示目标路径已有同名页面 — 须先处理冲突（合并或重命名），再重试 apply
 
 **风险**：路径变更会导致外部链接失效；执行前须确认是否存在 wiki 外部的引用。
 
@@ -138,19 +174,59 @@ quality_gates:
 
 **触发**：两个领域内容高度重叠（AI 判断相似度 > 70%，或人工指令明确指出）。
 
-**操作**：
-- 分析两领域的页面主题、关键词分布，输出重叠分析报告
-- 提出合并方案：保留哪个领域名称、如何处理冲突页面、如何合并 `_index.md`
-- 人工批准后：
-  1. 将一个领域的全部页面移入另一领域目录
-  2. 更新所有 `cross_refs` 中指向被合并领域的路径
-  3. 删除空领域目录，在原路径保留一个重定向占位 `_index.md`（内容仅含"本领域已合并至 {target}"）
-  4. 更新 STATE.md
+**操作（通过 migration 工作流执行）**：
+
+```bash
+# 1. 将被合并域所有页面迁移到目标域
+wiki migrate plan \
+  --op reclassify \
+  --scope "domain-merge: {source-domain} → {target-domain}" \
+  --from domain={source-domain} \
+  --to domain={target-domain} \
+  --reason "域合并：{source-domain} 与 {target-domain} 内容高度重叠" \
+  --json
+
+# 2. 预演确认
+wiki migrate dry-run PLAN_ID --json
+
+# 3. 人工批准后执行
+wiki migrate apply PLAN_ID --json
+
+# 4. 废弃原域名（记录迁移谱系）
+wiki taxonomy deprecate domain {source-domain} --replaced-by {target-domain} --json
+```
 
 **约束**：
 - 需人工明确批准（不可仅凭 AI 相似度判断执行）
 - 合并后须通过 quality gate 1（子领域 ≤ 50 页）验证
-- 重定向占位 `_index.md` 保留至少 30 天后方可删除
+- 执行 `taxonomy deprecate` 后，`replaced_by` 将以数组形式保存；`normalizeClassification` 检测到废弃域时会自动建议替换值
+
+---
+
+### 7. 未分类页面批量修复（Propose 级别）
+
+**触发**：`wiki maintain --json` 报告 `unclassified_pages` 不为零，或人工请求。
+
+**操作**：
+
+```bash
+# 1. 找出某域下所有未分配 subtype 的页面
+wiki migrate plan \
+  --op reclassify \
+  --scope "fix-unclassified: {domain}" \
+  --from domain={domain} subtype_is_null=true \
+  --to domain={domain} subtype={target-subtype} \
+  --reason "补充缺失 subtype" \
+  --json
+
+# 2. 预演确认
+wiki migrate dry-run PLAN_ID --json
+
+# 3. 批量修复
+wiki migrate apply PLAN_ID --json
+```
+
+**约束**：对不同主题的未分类页面分批处理；每批对应单一 subtype 值，不得一次性套用同一个 subtype 给语义差异较大的页面集合
 
 ---
 

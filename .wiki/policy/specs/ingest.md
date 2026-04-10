@@ -119,6 +119,51 @@ wiki import --input ingest-payload.json --json
 
 ---
 
+### Step 2.5 🧠：跨域与模糊分类处理
+
+**当且仅当**资料涉及多个领域、或无法确定主域时执行本步骤。
+
+#### 情况 A：资料明显跨越两个领域
+
+判断标准：资料的核心问题/解决方案同时扎根于两个不同领域（如"AI 在供应链中的应用"同时涉及 `ai` 和 `operations`）。
+
+**处理方式**：
+1. **选主域**：选择资料**核心解决的问题所属**的领域，而非内容提及最多的领域
+   - 判断依据：如果抽去该领域背景，资料的核心价值是否消失？消失 → 该领域为主域
+   - 若仍无法判断：选 canon 内容**更少**（知识缺口更大）的一侧为主域
+2. **登记次要域**：在 payload 的 source 和 proposal 中填写 `secondary_domains`：
+   ```json
+   "secondary_domains": ["operations"]
+   ```
+   runtime 会将 secondary_domains 写入索引，使该页面在跨域查询中也可被检索
+3. 继续正常流程（Step 3+）
+
+#### 情况 B：完全无法确定主域
+
+判断标准：资料属于哪个领域取决于读者视角，且当前 canon 中两个候选域的相关内容一样多（无明显知识缺口）。
+
+**处理方式**：
+1. 选**最接近**的候选域作为 `domain`，`subtype` 字段**留空**（不填）
+2. 在 `suggested_tags` 中写入候选域名，格式为 `possible:{domain}`：
+   ```json
+   "suggested_tags": ["possible:ai", "possible:product"]
+   ```
+3. 在 proposal 的 `## AI 建议` 中注明 `主域待确认：候选 ai / product`
+4. 系统会通过 taxonomy suggestion queue 将此分类不确定性浮出，由人工后续通过迁移修复：
+   ```bash
+   # 后续批量修复未分类页面
+   wiki migrate plan --op reclassify --from domain={domain} subtype_is_null=true --to ...
+   ```
+
+#### 情况 C：分类值在 taxonomy registry 中不存在
+
+不得自行发明正式枚举值（直接写入 `domain` / `subtype` 会通过 CLI 校验但跳过 registry 保护层）。正确做法：
+1. 使用最近似的现有值
+2. 将候选新值写入 `suggested_tags` / `suggested_aliases`
+3. 通过 `wiki taxonomy suggestions` 观察 AI 发现层，后续由人工 `accept` 升级为正式 registry 值
+
+---
+
 ### Step 3 🧠：从原始内容中提取 3–10 个关键声明
 
 从 `## 原始内容` 中识别具体、可验证、有知识价值的陈述，提取为声明列表。

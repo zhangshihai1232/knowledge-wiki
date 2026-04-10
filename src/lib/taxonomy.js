@@ -445,21 +445,37 @@ function normalizeClassification(repoRoot, fields, options = {}) {
   if (domain && !domainItem) {
     suggestionEntries.push({ kind: 'domain', value: domain, domain, primary_type: primaryType, via: options.via, source_path: options.sourcePath });
   } else if (domainItem && domainItem.status === 'deprecated') {
-    suggestionEntries.push({ kind: 'domain', value: domainItem.replaced_by || domain, domain, primary_type: primaryType, via: options.via, source_path: options.sourcePath });
+    // replaced_by is an array (supports 1:N splits); generate one suggestion per replacement value
+    const replacements = Array.isArray(domainItem.replaced_by) && domainItem.replaced_by.length
+      ? domainItem.replaced_by
+      : [domain];
+    for (const rep of replacements) {
+      suggestionEntries.push({ kind: 'domain', value: rep, domain, primary_type: primaryType, via: options.via, source_path: options.sourcePath });
+    }
   }
 
   const primaryTypeItem = primaryType ? findRegistryItem(taxonomy.primaryTypes.items, primaryType) : null;
   if (primaryType && !primaryTypeItem) {
     suggestionEntries.push({ kind: 'primary_type', value: primaryType, domain, primary_type: primaryType, via: options.via, source_path: options.sourcePath });
   } else if (primaryTypeItem && primaryTypeItem.status === 'deprecated') {
-    suggestionEntries.push({ kind: 'primary_type', value: primaryTypeItem.replaced_by || primaryType, domain, primary_type: primaryType, via: options.via, source_path: options.sourcePath });
+    const replacements = Array.isArray(primaryTypeItem.replaced_by) && primaryTypeItem.replaced_by.length
+      ? primaryTypeItem.replaced_by
+      : [primaryType];
+    for (const rep of replacements) {
+      suggestionEntries.push({ kind: 'primary_type', value: rep, domain, primary_type: primaryType, via: options.via, source_path: options.sourcePath });
+    }
   }
 
   const subtypeItem = subtype ? findRegistryItem(taxonomy.subtypes.items, subtype, { domain, primaryType }) : null;
   if (subtype && !subtypeItem) {
     suggestionEntries.push({ kind: 'subtype', value: subtype, domain, primary_type: primaryType, via: options.via, source_path: options.sourcePath });
   } else if (subtypeItem && subtypeItem.status === 'deprecated') {
-    suggestionEntries.push({ kind: 'subtype', value: subtypeItem.replaced_by || subtype, domain, primary_type: primaryType, via: options.via, source_path: options.sourcePath });
+    const replacements = Array.isArray(subtypeItem.replaced_by) && subtypeItem.replaced_by.length
+      ? subtypeItem.replaced_by
+      : [subtype];
+    for (const rep of replacements) {
+      suggestionEntries.push({ kind: 'subtype', value: rep, domain, primary_type: primaryType, via: options.via, source_path: options.sourcePath });
+    }
   }
 
   const suggestedTags = normalizeList(fields.suggested_tags || fields.suggestedTags);

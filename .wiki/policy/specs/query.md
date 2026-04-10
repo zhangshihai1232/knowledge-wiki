@@ -80,7 +80,8 @@ wiki ask "{用户问题}" --json
 1. 先对 query 做粗分类，得到 `domain_hints / primary_type_hints / subtype_hints`
 2. 用这些稳定字段对运行态索引做范围收窄
 3. 在缩小后的候选集中做 title / slug / path / tags / content 的词面排序
-4. 只对 top-k 候选做后续阅读与回答组织
+4. **置信度过滤**：在 top-k 候选中，优先使用 `confidence=high` 或 `confidence=medium` 的页面作为核心回答依据；`confidence=low` 的页面可纳入参考，但须在回答中追加标注 `[⚠️ 低置信度内容，建议验证]`，等同于外部推断处理。若某领域大量页面为 `confidence=low`，在 **系统动作** 中提示：可通过 `wiki migrate plan --op reclassify --from domain={domain} confidence=low` 批量修复
+5. 只对 top-k 候选做后续阅读与回答组织
 
 按照以下层级导航结构，定位与问题相关的 canon 页面：
 
