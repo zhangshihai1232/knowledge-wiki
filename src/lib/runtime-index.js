@@ -197,7 +197,7 @@ function upsertPageFile(db, repoRoot, filePath) {
   const withoutPrefix = relPath.replace(/^canon\/domains\//, '').replace(/\.md$/, '');
   const parts = withoutPrefix.split('/');
   const domain = parts[0] || '';
-  const category = parts.length > 2 ? parts.slice(1, -1).join('/') : parts[1] || '';
+  const category = parts.length > 2 ? parts.slice(1, -1).join('/') : '';
   const slug = parts[parts.length - 1] || '';
   const collection = frontmatter.collection || category || '';
   const sources = Array.isArray(frontmatter.sources) ? frontmatter.sources : [];
