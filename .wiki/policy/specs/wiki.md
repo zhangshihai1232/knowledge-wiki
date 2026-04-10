@@ -159,11 +159,11 @@ quality_gates:
   | 合并多页为一页 | `merge-pages` |
   | 废弃 taxonomy 项 | 使用 `wiki taxonomy deprecate` |
 
-- 调用流程（见 `.claude/skills/wiki.md` 中的「迁移工作流」章节）：
+- 调用流程（详见 `.wiki/policy/specs/migrate.md`）：
   1. `wiki migrate plan --op TYPE ...` — 生成计划
   2. `wiki migrate dry-run PLAN_ID` — 预演，展示影响范围，等待人工确认
   3. 人工确认后 → `wiki migrate apply PLAN_ID`
-  4. 出现 `reclassify collision` 错误时 → 走错误恢复流程
+  4. 出现 `reclassify collision` 错误时 → 走错误恢复流程（合并/重命名/跳过三选一）
 
 ---
 

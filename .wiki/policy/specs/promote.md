@@ -275,6 +275,14 @@ wiki status
 
 则其 `approve_note` 中必须明确写明“交由 maintain 执行”的处理意图。此类 proposal 在 approve 后进入 `changes/approved/`，但**不进入 compile**，由 maintain spec 作为结构治理任务消费。
 
+**Gate 1.4：govern 迁移提案路由检查**
+
+若 proposal 满足以下条件：
+
+- `origin = govern` 或 `action = migrate`
+
+则其 `approve_note` 中必须包含对应的 `plan_id`（格式：`wiki migrate apply <plan_id>`）。此类 proposal 在 approve 后进入 `changes/approved/`，但**不进入 compile**，由 `wiki migrate apply` 作为治理动作消费。若 `approve_note` 中未提供有效 `plan_id`，拒绝 approve 并提示补充迁移计划 ID。
+
 **Gate 1.5：连续 approve 预警**
 
 在每次 approve 操作后，从最新决策向前回溯，直到遇到第一条 reject 为止，计算 `consecutive_approve_count`。若 `consecutive_approve_count >= 10`，则向审查者输出以下预警：

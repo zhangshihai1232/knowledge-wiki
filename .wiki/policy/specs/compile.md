@@ -63,9 +63,9 @@ compile **只处理可直接写入 canon 的知识提案**。`origin=lint-patrol
 ```yaml
 target_page: <canon页相对路径，格式：{domain}/{category}/{slug}，例如 ai/architectures/transformer>
 target_type: <concept | entity | comparison | guide | decision>  # action=create 时必须存在
-action: <create | update | archive>
+action: <create | update | archive | migrate>
 confidence: <high | medium | low>
-origin: <ingest | query-writeback | lint-patrol | manual>
+origin: <ingest | query-writeback | lint-patrol | govern | manual>
 trigger_source: <触发来源的 source 文件路径>
 ```
 
@@ -83,6 +83,7 @@ canon/domains/{target_page}.md
 
 - 若 `origin = lint-patrol` 或 `target_page` 以 `_system/` 开头：在 LOG 中记录 `SKIP: routed to maintain`，本次 compile 跳过该 proposal，不修改其 `compiled` 字段，等待 maintain spec 消费。
 - 若 `origin = query-writeback` 且 `trigger_source` 仍为 `system:query-writeback`：在 LOG 中记录 `SKIP: query gap not yet evidence-backed`，本次 compile 跳过该 proposal，不修改其 `compiled` 字段，等待补充真实来源。
+- 若 `origin = govern` 或 `action = migrate`：在 LOG 中记录 `SKIP: routed to wiki migrate apply`，本次 compile 跳过该 proposal，不修改其 `compiled` 字段，等待治理工作流（`wiki migrate apply <plan_id>`）消费。
 
 **CLI 辅助**：读取 proposal frontmatter 字段：
 ```bash
@@ -237,7 +238,7 @@ wiki internal mark-compiled changes/approved/2026-04-08-create-transformer.md
 ```markdown
 ## <YYYY-MM-DD> compile <proposal文件名>
 
-- action: <create | update | archive>
+- action: <create | update | archive | migrate>
 - target: <target_page>
 - sources_added: <新增来源数量>
 - cross_refs_updated: <更新的交叉引用数量>
