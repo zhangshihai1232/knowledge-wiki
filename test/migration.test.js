@@ -376,3 +376,101 @@ test('migration: merge-pages archives sources and records aliases', (t) => {
   const supersedes = (fmTarget.typed_refs || []).filter((r) => r.type === 'supersedes');
   assert.ok(supersedes.length >= 1, 'target should have supersedes typed_refs for merged sources');
 });
+
+test('migration: merge-pages rollback fully restores source and target', (t) => {
+  const repoPath = makeTempRepo(t);
+
+  createCanon(repoPath, {
+    targetPage: 'ai/rag/rollback-src-a',
+    type: 'concept',
+    title: 'Rollback Src A',
+    sources: [],
+  });
+  createCanon(repoPath, {
+    targetPage: 'ai/rag/rollback-src-b',
+    type: 'concept',
+    title: 'Rollback Src B',
+    sources: [],
+  });
+  createCanon(repoPath, {
+    targetPage: 'ai/rag/rollback-target',
+    type: 'concept',
+    title: 'Rollback Target',
+    sources: [],
+  });
+
+  const srcA = 'canon/domains/ai/rag/rollback-src-a.md';
+  const srcB = 'canon/domains/ai/rag/rollback-src-b.md';
+  const tgt = 'canon/domains/ai/rag/rollback-target.md';
+
+  const plan = createMigrationPlan(repoPath, {
+    operation_type: 'merge-pages',
+    scope: 'rollback-test',
+    from: { page_paths: [srcA, srcB] },
+    to: { target_path: tgt },
+  });
+  dryRunMigrationPlan(repoPath, plan.plan_id);
+  applyMigrationPlan(repoPath, plan.plan_id);
+  rollbackMigrationPlan(repoPath, plan.plan_id);
+
+  // Sources should be restored: status=active, merged_into removed
+  const fmA = parseFrontmatterFile(path.join(repoPath, '.wiki', srcA)).frontmatter;
+  const fmB = parseFrontmatterFile(path.join(repoPath, '.wiki', srcB)).frontmatter;
+  assert.equal(fmA.status, 'active', 'source-a should be active after rollback');
+  assert.equal(fmB.status, 'active', 'source-b should be active after rollback');
+  assert.ok(!fmA.merged_into, 'source-a merged_into should be absent/null after rollback');
+
+  // Target should have original typed_refs (empty supersedes)
+  const fmTarget = parseFrontmatterFile(path.join(repoPath, '.wiki', tgt)).frontmatter;
+  const supersedes = (fmTarget.typed_refs || []).filter((r) => r.type === 'supersedes');
+  assert.equal(supersedes.length, 0, 'target should have no supersedes after rollback');
+});
+
+test('migration: deprecate allows empty to spec (pure archive)', (t) => {
+  const repoPath = makeTempRepo(t);
+
+  createCanon(repoPath, {
+    targetPage: 'ai/rag/pure-archive',
+    type: 'concept',
+    title: 'Pure Archive',
+    sources: [],
+  });
+
+  // Should NOT throw — deprecate with empty to is valid
+  const plan = createMigrationPlan(repoPath, {
+    operation_type: 'deprecate',
+    scope: 'pure-archive',
+    from: { domain: 'ai' },
+    to: {},
+  });
+  assert.equal(plan.operation_type, 'deprecate');
+
+  dryRunMigrationPlan(repoPath, plan.plan_id);
+  applyMigrationPlan(repoPath, plan.plan_id);
+
+  const fp = path.join(repoPath, '.wiki', 'canon', 'domains', 'ai', 'rag', 'pure-archive.md');
+  const { frontmatter } = parseFrontmatterFile(fp);
+  assert.equal(frontmatter.status, 'archived', 'page should be archived');
+});
+
+test('updateFrontmatterFile: undefined value deletes key', (t) => {
+  const repoPath = makeTempRepo(t);
+  const { updateFrontmatterFile: updateFm } = require('../src/lib/frontmatter');
+
+  createCanon(repoPath, {
+    targetPage: 'ai/rag/delete-key-test',
+    type: 'concept',
+    title: 'Delete Key Test',
+    sources: [],
+  });
+
+  const fp = path.join(repoPath, '.wiki', 'canon', 'domains', 'ai', 'rag', 'delete-key-test.md');
+  updateFm(fp, { merged_into: 'some/path.md' });
+  const fm1 = parseFrontmatterFile(fp).frontmatter;
+  assert.equal(fm1.merged_into, 'some/path.md', 'key should be set');
+
+  // Delete with undefined
+  updateFm(fp, { merged_into: undefined });
+  const fm2 = parseFrontmatterFile(fp).frontmatter;
+  assert.ok(!('merged_into' in fm2), 'key should be absent after delete');
+});

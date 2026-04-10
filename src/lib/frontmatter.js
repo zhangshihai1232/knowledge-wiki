@@ -136,7 +136,12 @@ function writeFrontmatterFile(filePath, frontmatter, body) {
 function updateFrontmatterFile(filePath, updates) {
   const { frontmatter, body } = parseFrontmatterFile(filePath);
   for (const [key, value] of Object.entries(updates)) {
-    frontmatter[key] = value;
+    if (value === undefined) {
+      // Explicit undefined = delete the key entirely from frontmatter
+      delete frontmatter[key];
+    } else {
+      frontmatter[key] = value;
+    }
   }
   writeFrontmatterFile(filePath, frontmatter, body);
   return frontmatter;

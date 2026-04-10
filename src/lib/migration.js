@@ -158,7 +158,8 @@ function createMigrationPlan(repoRoot, options) {
   if (!Object.keys(from).length) {
     throw new Error('migration: from filter is required');
   }
-  if (!Object.keys(to).length) {
+  // deprecate only needs a from-filter (it just archives pages, no reclassify required)
+  if (!Object.keys(to).length && operationType !== 'deprecate') {
     throw new Error('migration: to spec is required');
   }
 
@@ -314,14 +315,23 @@ function applyMergePages(repoRoot, plan, planId) {
     }
     const { frontmatter } = parseFrontmatterFile(srcAbsPath);
 
-    // Archive the source page
-    const rollback = { path: srcPath, original: { status: frontmatter.status || null } };
+    // Capture full rollback state before mutating.
+    // Keys absent before (not in frontmatter) go into delete_keys so rollback removes them cleanly.
+    const rollback = {
+      path: srcPath,
+      original: { status: frontmatter.status || null },
+      delete_keys: [],
+      page_id: frontmatter.page_id || null,
+    };
+    if ('merged_into' in frontmatter) {
+      rollback.original.merged_into = frontmatter.merged_into || null;
+    } else {
+      rollback.delete_keys.push('merged_into');
+    }
     updateFrontmatterFile(srcAbsPath, { status: 'archived', merged_into: targetWikiPath });
 
-    // Record alias: source path → target page_id (if target exists) or source page_id→target path
+    // Record alias: source path → source page_id (callers resolve target via merged_into field)
     if (frontmatter.page_id) {
-      // When resolvePathAlias is called for source path, it returns source page_id.
-      // Callers then resolve target by looking up the merged_into field.
       recordPathAlias(repoRoot, srcPath, frontmatter.page_id);
     }
 
@@ -330,21 +340,21 @@ function applyMergePages(repoRoot, plan, planId) {
     archivedSources.push({ path: srcPath, page_id: frontmatter.page_id || null });
   }
 
-  // Update target page's typed_refs with supersedes entries (if target exists)
+  // Capture target's original typed_refs BEFORE modifying (needed for rollback)
+  let targetOriginalTypedRefs = [];
   if (fs.existsSync(targetAbsPath)) {
     const { frontmatter: targetFm } = parseFrontmatterFile(targetAbsPath);
-    const existingRefs = Array.isArray(targetFm.typed_refs) ? targetFm.typed_refs : [];
+    targetOriginalTypedRefs = Array.isArray(targetFm.typed_refs) ? [...targetFm.typed_refs] : [];
     const newSupersedes = archivedSources
       .filter((s) => s.page_id)
       .map((s) => ({ target: s.page_id, type: 'supersedes' }));
-    // Merge deduplicated
-    const allRefs = [...existingRefs];
+    const allRefs = [...targetOriginalTypedRefs];
     for (const ref of newSupersedes) {
       if (!allRefs.some((r) => r.target === ref.target && r.type === ref.type)) {
         allRefs.push(ref);
       }
     }
-    if (allRefs.length !== existingRefs.length) {
+    if (allRefs.length !== targetOriginalTypedRefs.length) {
       updateFrontmatterFile(targetAbsPath, { typed_refs: allRefs });
     }
     syncRuntimeFiles(repoRoot, [targetAbsPath]);
@@ -370,7 +380,12 @@ function applyMergePages(repoRoot, plan, planId) {
 
   plan.status = 'applied';
   plan.applied_at = formatTimestamp();
-  plan.rollback_plan = { entries: rollbackEntries };
+  // Full rollback state: source entries + target original typed_refs
+  plan.rollback_plan = {
+    entries: rollbackEntries,
+    target_path: targetWikiPath,
+    target_original_typed_refs: targetOriginalTypedRefs,
+  };
   savePlan(repoRoot, plan);
 
   return { plan_id: planId, applied: archivedSources.length, archived_sources: archivedSources, target: targetWikiPath };
@@ -403,7 +418,7 @@ function applyMigrationPlan(repoRoot, planId, options = {}) {
     }
     const { frontmatter } = parseFrontmatterFile(absolutePath);
     const updates = {};
-    const rollback = { path: page.path, original: {} };
+    const rollback = { path: page.path, original: {}, delete_keys: [] };
 
     // Apply domain (big classification) change
     if (plan.to.domain && plan.to.domain !== frontmatter.domain) {
@@ -525,11 +540,16 @@ function rollbackMigrationPlan(repoRoot, planId) {
     if (!fs.existsSync(currentPath)) {
       continue;
     }
-    // Restore original frontmatter fields
+    // Restore original frontmatter fields (status, merged_into, domain, etc.)
     if (Object.keys(entry.original).length) {
       updateFrontmatterFile(currentPath, entry.original);
     }
-    // Restore original path
+    // Delete keys that didn't exist before this migration (e.g., merged_into added by merge-pages)
+    if (Array.isArray(entry.delete_keys) && entry.delete_keys.length) {
+      const deletions = Object.fromEntries(entry.delete_keys.map((k) => [k, undefined]));
+      updateFrontmatterFile(currentPath, deletions);
+    }
+    // Restore original path if it was moved
     if (entry.new_path && currentPath !== originalAbsPath) {
       fs.mkdirSync(path.dirname(originalAbsPath), { recursive: true });
       fs.renameSync(currentPath, originalAbsPath);
@@ -538,6 +558,18 @@ function rollbackMigrationPlan(repoRoot, planId) {
       syncRuntimeFiles(repoRoot, [currentPath]);
     }
     rolledBack.push(entry.path);
+  }
+
+  // merge-pages: also restore target page's original typed_refs
+  if (plan.operation_type === 'merge-pages' && plan.rollback_plan.target_path) {
+    const targetAbsPath = path.join(repoRoot, '.wiki', plan.rollback_plan.target_path);
+    if (fs.existsSync(targetAbsPath)) {
+      const originalRefs = Array.isArray(plan.rollback_plan.target_original_typed_refs)
+        ? plan.rollback_plan.target_original_typed_refs
+        : [];
+      updateFrontmatterFile(targetAbsPath, { typed_refs: originalRefs });
+      syncRuntimeFiles(repoRoot, [targetAbsPath]);
+    }
   }
 
   const logPath = getMigrationLogPath(repoRoot);
