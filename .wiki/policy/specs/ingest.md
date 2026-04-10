@@ -395,25 +395,80 @@ wiki internal update-state
 
 ## 调用示例
 
-> **说明**：以下示例展示**分步操作模式**（适用于调试或需要精细控制的场景）。日常使用请优先使用 `wiki import` payload 模式（见 Step 2），该模式由 runtime 统一处理 source 创建、声明写入、日志更新等全部步骤。
+> **说明**：以下示例展示两种模式。  
+> **推荐**：`wiki import` payload 模式（日常使用，runtime 统一处理 source/proposal/dedup/LOG）。  
+> **备用**：分步操作模式（调试或需要精细控制时）。  
+> **注意**：`--body-file` 路径必须是当前工作目录下的相对路径，**不得使用 `/tmp`**。
 
 **场景**：用户粘贴了一篇关于 Transformer 架构的 AI 文章摘要，要求摄入知识库。
 
----
-
 **原始输入**：
 
-> 标题：Attention Is All You Need
-> 来源：https://arxiv.org/abs/1706.03762
+> 标题：Attention Is All You Need  
+> 来源：https://arxiv.org/abs/1706.03762  
 > 作者：Vaswani et al.，2017
 >
 > 摘要：我们提出了一种新的简单网络架构 Transformer，完全基于注意力机制，摒弃了递归和卷积。在两个机器翻译任务上，该模型在质量上更优，同时更可并行化，且所需训练时间显著减少。在 WMT 2014 英德翻译任务中，我们的模型达到 28.4 BLEU，超越现有最佳结果（包括集成模型）2 BLEU 以上。在 WMT 2014 英法翻译任务上，单一模型取得 41.0 BLEU，创下新的单模型最优成绩。
 
 ---
 
-**执行过程**：
+### 推荐方式：wiki import payload 模式
 
-**Step 1 🧠**：资料有标题、作者、发布时间，且是学术文章 → `source_kind: article`，存入 `.wiki/sources/articles/`，slug 为 `attention-is-all-you-need`，文件名 `2026-04-08-attention-is-all-you-need.md`。
+**Step 1 🧠**：资料有标题、作者、发布时间，且是学术文章 → `source_kind: article`，主域 `ai`（资料核心解决 AI 架构问题），无次要域。提取 4 条声明。
+
+**Step 2 🧠**：生成 payload JSON（存入当前目录 `ingest-payload.json`）：
+
+```json
+{
+  "source": {
+    "kind": "article",
+    "title": "Attention Is All You Need",
+    "domain": "ai",
+    "primary_type": "source",
+    "subtype": "paper",
+    "url": "https://arxiv.org/abs/1706.03762",
+    "author": "Vaswani et al.",
+    "published_at": "2017-06-12",
+    "tags": ["transformer", "attention", "nlp", "deep-learning"],
+    "authority": "authoritative",
+    "body": "## 原始内容\n\n摘要：我们提出了一种新的简单网络架构 Transformer..."
+  },
+  "proposal": {
+    "action": "create",
+    "target_page": "ai/architectures/transformer",
+    "target_type": "concept",
+    "domain": "ai",
+    "primary_type": "concept",
+    "subtype": "architecture",
+    "confidence": "medium",
+    "body": "## 提案摘要\n\n新建 Transformer 架构 canon 页...\n\n## 变更内容\n\n..."
+  },
+  "claims": [
+    "Transformer 完全基于注意力机制，不使用递归或卷积。（原文：摘要第1句）",
+    "Transformer 比基于 RNN 的模型更可并行化，训练时间显著减少。（原文：摘要第2句）",
+    "WMT 2014 英德翻译 BLEU 28.4，超越现有最佳 2 BLEU 以上。（原文：摘要第3句）",
+    "WMT 2014 英法翻译单模型 BLEU 41.0，创单模型新纪录。（原文：摘要第4句）"
+  ]
+}
+```
+
+**Step 3 ⚙️**：调用 wiki import 单命令完成全部落盘：
+
+```bash
+wiki import --input ingest-payload.json --json
+# → 输出: source 路径 + proposal 路径 + dedup 状态 + LOG 更新结果
+```
+
+**Quality Gates 检查**：
+- QG-1：frontmatter 完整，`extracted: true` ✓
+- QG-2：`## 原始内容` 与用户粘贴原文一致，未改写 ✓
+- QG-3：`target_page: ai/architectures/transformer` 格式合法 ✓
+
+---
+
+### 备用方式：分步操作模式（调试用）
+
+> 将正文内容写入当前目录文件（勿使用 /tmp）
 
 **Step 2 ⚙️**：调用 CLI 创建 source 文件：
 
@@ -423,22 +478,14 @@ wiki internal create-source \
   --title "Attention Is All You Need" \
   --domain ai \
   --primary-type source \
-  --subtype meeting-note \
+  --subtype paper \
   --url "https://arxiv.org/abs/1706.03762" \
   --author "Vaswani et al." \
   --published-at "2017-06-12" \
   --tags "transformer,attention,nlp,deep-learning" \
-  --body-file /tmp/source-body.md
+  --body-file source-body.md
 # → 输出: .wiki/sources/articles/2026-04-08-attention-is-all-you-need.md
 ```
-
-**Step 3 🧠**：提取 4 条声明：
-1. Transformer 完全基于注意力机制，不使用递归或卷积。（原文：摘要第1句）
-2. Transformer 比基于 RNN 的模型更可并行化，训练时间显著减少。（原文：摘要第2句）
-3. WMT 2014 英德翻译 BLEU 28.4，超越现有最佳 2 BLEU 以上。（原文：摘要第3句）
-4. WMT 2014 英法翻译单模型 BLEU 41.0，创单模型新纪录。（原文：摘要第4句）
-
-**Step 4 🧠**：读取 `.wiki/canon/_index.md`，未找到 `transformer` 或 `attention-mechanism` 相关页面 → 全部声明归入一个 `action: create` 的 proposal，`target_page: ai/architectures/transformer`。
 
 **Step 5 ⚙️**：调用 CLI 创建 proposal 文件：
 
@@ -452,30 +499,15 @@ wiki internal create-proposal \
   --subtype architecture \
   --trigger-source "sources/articles/2026-04-08-attention-is-all-you-need.md" \
   --confidence medium \
-  --body-file /tmp/proposal-body.md
+  --body-file proposal-body.md
 # → 输出: .wiki/changes/inbox/2026-04-08-create-transformer.md
 ```
 
-**Step 6 ⚙️**：调用 CLI 标记 source 为已提取：
+**Step 6 ⚙️**：标记 source 已提取：
 
 ```bash
 wiki internal mark-extracted sources/articles/2026-04-08-attention-is-all-you-need.md
 ```
-
-LLM 同时将 4 条声明追加到 source 文件的 `## 提取声明` 节。
-
-**Step 7 ⚙️**：调用 CLI 追加日志和更新状态：
-
-```bash
-wiki internal append-log --spec ingest \
-  --message "source: sources/articles/2026-04-08-attention-is-all-you-need.md | proposals: 2026-04-08-create-transformer.md | action: create | note: 摄入 Transformer 原始论文摘要"
-wiki internal update-state
-```
-
-**Quality Gates 检查**：
-- QG-1：frontmatter 完整，`extracted: true` ✓
-- QG-2：`## 原始内容` 与用户粘贴原文一致，未改写 ✓
-- QG-3：`target_page: ai/architectures/transformer` 格式合法 ✓
 
 **输出产物**：
 - `.wiki/sources/articles/2026-04-08-attention-is-all-you-need.md`

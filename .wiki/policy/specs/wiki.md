@@ -96,13 +96,21 @@ quality_gates:
 1. **主任务类型**
 2. **是否需要展开细节**
 
-主任务类型只归入以下 3 类之一：
+主任务类型只归入以下 4 类之一：
 
 | 类型 | 特征 | 内部路由 |
 |---|---|---|
 | `answer` | 提问、询问结论、寻求解释 | `query` |
 | `absorb` | 提供资料、要求入库、要求吸收 | `ingest` |
 | `organize` | 请求整理、补缺、批量更新 | `reconcile / refresh / maintain` |
+| `govern` | 改变分类结构、废弃分类、批量迁移、拆分/合并领域 | `migrate` |
+
+**`govern` 触发信号**（以下表达均应路由到 `migrate`）：
+- "把 X 域改名为 Y"、"把 X 域的内容迁移到 Y 域"
+- "这个分类已经废弃了"、"X 和 Y 两个子类应该合并"
+- "帮我把所有没有分类的页面归入 Z"
+- "把这批页面从 A 领域移到 B 领域"
+- "taxonomy 里 X 这个 subtype 应该拆成两个"
 
 同时独立判断是否存在 `audit_requested = yes`。以下表达应视为 audit 触发信号：
 
@@ -137,6 +145,26 @@ quality_gates:
   - 内容刷新 → `refresh.md`
   - 结构维护 → `maintain.md`
 
+#### 2.4 `govern`
+
+- 识别迁移操作类型（从用户意图推断 `--op`）：
+
+  | 用户意图 | 迁移操作 `--op` |
+  |---------|----------------|
+  | 重命名领域 | `rename-domain` |
+  | 将页面从A迁到B | `reclassify` |
+  | 移动到不同集合 | `relocate` |
+  | 合并子类型 | `merge-subtype` |
+  | 废弃一批旧页面 | `deprecate` |
+  | 合并多页为一页 | `merge-pages` |
+  | 废弃 taxonomy 项 | 使用 `wiki taxonomy deprecate` |
+
+- 调用流程（见 `.claude/skills/wiki.md` 中的「迁移工作流」章节）：
+  1. `wiki migrate plan --op TYPE ...` — 生成计划
+  2. `wiki migrate dry-run PLAN_ID` — 预演，展示影响范围，等待人工确认
+  3. 人工确认后 → `wiki migrate apply PLAN_ID`
+  4. 出现 `reclassify collision` 错误时 → 走错误恢复流程
+
 ---
 
 ### Step 3 🧠⚙️：自动接管系统内部动作
@@ -155,6 +183,7 @@ quality_gates:
 - `answer/query` 路由：先调用 `wiki ask "{query}" --json` 做轻量分类（`domain / primary_type / subtype`）并缩小候选上下文，再做语义综合；优先消费其 `contract_version / retrieval / pages / proposals / sources` 结构
 - `absorb/ingest` 路由：由 LLM 先生成结构化 payload，再调用 `wiki import --input payload.json --json`，让 runtime 一次性完成 source / proposal / claims / extracted / dedup evidence 收尾；批处理场景可用 `--input -` 从 stdin 读入
 - `organize/maintain` 路由：优先调用 `wiki maintain --json` 获取统计、结构发现与衰减建议
+- `govern/migrate` 路由：按 `wiki migrate plan → dry-run → apply` 四步流程执行；taxonomy 废弃使用 `wiki taxonomy deprecate KIND ID --replaced-by VALUE`；收到 `reclassify collision` 错误时暂停并展示三选一恢复问题
 - 分类治理使用：`wiki taxonomy suggestions / wiki taxonomy accept / wiki taxonomy reject`，用于显式吸收 registry 候选值
 - 队列收尾仍使用：`wiki review / wiki apply / wiki resolve`；其中 agent 读取队列时优先消费 `wiki review --json / wiki apply list --json / wiki resolve --json`，避免解析表格文本
 
