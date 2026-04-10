@@ -758,7 +758,7 @@ function renderFindings(findings) {
     }
     lines.push(`---------- ${severity.toUpperCase()} ----------`);
     for (const item of groups[severity]) {
-      lines.push(`[${severity.toUpperCase()}] ${item.ruleId} ${item.targetPath} — ${item.message}`);
+      lines.push(`[${severity.toUpperCase()}] ${item.rule} ${item.targetPath} — ${item.message}`);
     }
     lines.push('');
   }
@@ -1221,7 +1221,12 @@ function runInternalCommand(repoRoot, args) {
     }
     case 'scan': {
       const json = args.includes('--format') && args[args.indexOf('--format') + 1] === 'json';
-      const findings = computeCheckFindings(repoRoot);
+      const ruleIdx = args.indexOf('--rule');
+      const ruleFilter = ruleIdx >= 0 ? args[ruleIdx + 1] : null;
+      let findings = computeCheckFindings(repoRoot);
+      if (ruleFilter) {
+        findings = findings.filter((f) => f.rule === ruleFilter);
+      }
       const score = findings.length === 0 ? 100 : Math.max(0, 100 - findings.filter((item) => item.severity !== 'info').length * 3);
       return json ? JSON.stringify({ findings, health_score: score }, null, 2) : renderFindings(findings);
     }

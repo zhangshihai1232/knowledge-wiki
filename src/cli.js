@@ -742,9 +742,10 @@ function runMigrate(configPath, repoOverride, args) {
   }
 
   if (subcommand === 'plan') {
-    const options = { from: {}, to: {} };
+    const options = { from: {}, to: {}, filter: {} };
     let parsingFrom = false;
     let parsingTo = false;
+    let parsingFilter = false;
     for (let index = 1; index < args.length; index += 1) {
       const token = args[index];
       switch (token) {
@@ -753,41 +754,62 @@ function runMigrate(configPath, repoOverride, args) {
           index += 1;
           parsingFrom = false;
           parsingTo = false;
+          parsingFilter = false;
           break;
         case '--scope':
           options.scope = args[index + 1] || '';
           index += 1;
           parsingFrom = false;
           parsingTo = false;
+          parsingFilter = false;
           break;
         case '--reason':
           options.reason = args[index + 1] || '';
           index += 1;
           parsingFrom = false;
           parsingTo = false;
+          parsingFilter = false;
           break;
         case '--from':
           parsingFrom = true;
           parsingTo = false;
+          parsingFilter = false;
           break;
         case '--to':
           parsingTo = true;
           parsingFrom = false;
+          parsingFilter = false;
+          break;
+        case '--filter':
+          parsingFilter = true;
+          parsingFrom = false;
+          parsingTo = false;
           break;
         case '--json':
           break;
         default:
-          if (parsingFrom && token.includes('=')) {
-            const [key, val] = token.split('=');
-            options.from[key] = val;
-          } else if (parsingTo && token.includes('=')) {
-            const [key, val] = token.split('=');
-            options.to[key] = val;
+          if (token.includes('=')) {
+            const eqIdx = token.indexOf('=');
+            const key = token.slice(0, eqIdx);
+            const val = token.slice(eqIdx + 1);
+            if (parsingFrom) {
+              options.from[key] = val;
+            } else if (parsingTo) {
+              options.to[key] = val;
+            } else if (parsingFilter) {
+              // coerce boolean strings
+              options.filter[key] = val === 'true' ? true : val === 'false' ? false : val;
+            }
           }
       }
     }
     if (!options.operation_type) {
       die(`migrate plan requires --op (one of: ${OPERATION_TYPES.join(', ')})`);
+    }
+    // Merge --filter entries into options.from so findMatchingPages receives them
+    // e.g. --filter subtype_is_null=true → options.from.subtype_is_null = true
+    if (options.filter && Object.keys(options.filter).length > 0) {
+      options.from = Object.assign({}, options.from, options.filter);
     }
     try {
       const plan = createMigrationPlan(repoRoot, options);

@@ -183,7 +183,7 @@ function computeCheckFindings(repoRoot) {
   db.exec('DELETE FROM lint_findings');
   const findings = [];
   const pushFinding = (ruleId, severity, targetPath, message) => {
-    findings.push({ ruleId, severity, targetPath, message });
+    findings.push({ rule: ruleId, severity, targetPath, message });
     db.prepare('INSERT INTO lint_findings (rule_id, severity, target_path, message) VALUES (?, ?, ?, ?)')
       .run(ruleId, severity, targetPath, message);
   };
@@ -355,24 +355,12 @@ function computeCheckFindings(repoRoot) {
     }
   }
 
-  // S006 Unclassified: pages with subtype=null or confidence=low and no recent query activity
-  //   These are pages the system couldn't confidently classify — surface them for AI reclassification
-  const LOW_CONFIDENCE_STALE_DAYS = 14;
+  // L012 unclassified-page: pages with subtype=null/empty, exempt _system/ paths
+  //   No staleness gate — any page without subtype is immediately surfaced
+  //   (confidence=low is separately handled by L005)
   for (const page of pages) {
-    const meta = JSON.parse(page.meta_json || '{}');
-    const lastUpdated = page.last_updated || '';
-    let staleness = Number.parseInt(page.staleness_days || 0, 10) || 0;
-    if (lastUpdated) {
-      const updatedDate = new Date(lastUpdated);
-      if (!Number.isNaN(updatedDate.getTime())) {
-        staleness = Math.max(0, Math.floor((Date.now() - updatedDate.getTime()) / 86400000));
-      }
-    }
-    const noSubtype = !page.subtype;
-    const lowConf = page.confidence === 'low';
-    if ((noSubtype || lowConf) && staleness > LOW_CONFIDENCE_STALE_DAYS) {
-      const reason = noSubtype ? 'subtype 未设定' : 'confidence=low';
-      pushFinding('S006', 'info', page.path, `[Unclassified] ${reason}，已 ${staleness} 天未更新，建议 AI 重新分类提案`);
+    if (!page.subtype && !page.path.includes('/_system/')) {
+      pushFinding('L012', 'info', page.path, 'subtype 未设定，分类检索中不可见；建议补充 subtype 或触发 maintain Section 7 批量修复');
     }
   }
 

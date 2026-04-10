@@ -15,9 +15,10 @@ const path = require('path');
 const test = require('node:test');
 
 const { scaffoldRepo } = require('../src/lib/bootstrap');
-const { createCanon, extractCollection, generatePageId } = require('../src/lib/wiki-internal');
+const { createCanon, extractCollection, generatePageId, runInternalCommand } = require('../src/lib/wiki-internal');
 const { parseFrontmatterFile } = require('../src/lib/frontmatter');
 const { openRuntimeIndex } = require('../src/lib/runtime-index');
+const { computeCheckFindings } = require('../src/lib/wiki-repo');
 const { recordPathAlias, recordTaxonomyAlias, resolvePathAlias, resolveTaxonomyAlias } = require('../src/lib/alias');
 const {
   createMigrationPlan,
@@ -578,4 +579,93 @@ test('P2: deprecateTaxonomyItem stores replaced_by as array and supports 1:N spl
   const none = deprecateTaxonomyItem(repoPath, 'domain', 'legacy3');
   assert.ok(Array.isArray(none.replaced_by), 'replaced_by should be array even with no replacement');
   assert.equal(none.replaced_by.length, 0, 'no replacement → empty array');
+});
+
+test('Fix1: computeCheckFindings emits L012 (not S006) for pages with no subtype', (t) => {
+  const repoPath = makeTempRepo(t);
+  registerDomain(repoPath, 'topics', { label: 'Topics' });
+
+  // Page with subtype — should NOT trigger L012
+  createCanon(repoPath, {
+    targetPage: 'topics/classified-page',
+    type: 'concept',
+    title: 'Classified Page',
+    sources: [],
+    subtype: 'overview',
+  });
+
+  // Page without subtype — SHOULD trigger L012
+  createCanon(repoPath, {
+    targetPage: 'topics/unclassified-page',
+    type: 'concept',
+    title: 'Unclassified Page',
+    sources: [],
+  });
+
+  const findings = computeCheckFindings(repoPath);
+  const l012 = findings.filter((f) => f.rule === 'L012');
+  const s006 = findings.filter((f) => f.rule === 'S006');
+
+  assert.equal(s006.length, 0, 'S006 should no longer exist (replaced by L012)');
+  assert.ok(l012.length >= 1, 'L012 should fire for unclassified page');
+  assert.ok(l012.some((f) => f.targetPath.endsWith('/topics/unclassified-page.md')), 'L012 should point to the unclassified page');
+  assert.ok(!l012.some((f) => f.targetPath.endsWith('/topics/classified-page.md')), 'L012 should NOT fire for classified page');
+});
+
+test('Fix2: wiki migrate plan --filter subtype_is_null=true selects unclassified pages', (t) => {
+  const repoPath = makeTempRepo(t);
+  registerDomain(repoPath, 'research', { label: 'Research' });
+
+  createCanon(repoPath, {
+    targetPage: 'research/has-subtype',
+    type: 'concept', title: 'Has Subtype', sources: [], subtype: 'ml',
+  });
+  createCanon(repoPath, {
+    targetPage: 'research/no-subtype-a',
+    type: 'concept', title: 'No Subtype A', sources: [],
+  });
+  createCanon(repoPath, {
+    targetPage: 'research/no-subtype-b',
+    type: 'concept', title: 'No Subtype B', sources: [],
+  });
+
+  const plan = createMigrationPlan(repoPath, {
+    operation_type: 'reclassify',
+    from: { domain: 'research', subtype_is_null: true },
+    to: { subtype: 'general' },
+    scope: 'classify-unclassified',
+  });
+
+  assert.equal(plan.affected_page_paths.length, 2, 'filter should select only the 2 unclassified pages');
+  assert.ok(plan.affected_page_paths.some((p) => p.includes('no-subtype-a')), 'should include no-subtype-a');
+  assert.ok(plan.affected_page_paths.some((p) => p.includes('no-subtype-b')), 'should include no-subtype-b');
+  assert.ok(!plan.affected_page_paths.some((p) => p.includes('has-subtype')), 'should exclude has-subtype');
+});
+
+test('Fix3: wiki internal scan --rule filters findings to a single rule', (t) => {
+  const repoPath = makeTempRepo(t);
+  registerDomain(repoPath, 'filter-test', { label: 'Filter Test' });
+
+  // Create an unclassified page (triggers L012) and a page with empty sources (triggers L003)
+  createCanon(repoPath, {
+    targetPage: 'filter-test/no-subtype',
+    type: 'concept', title: 'No Subtype', sources: [],
+  });
+
+  // scan without --rule should return multiple rule types
+  const allOutput = runInternalCommand(repoPath, ['scan', '--format', 'json']);
+  const allFindings = JSON.parse(allOutput).findings;
+  const ruleSet = new Set(allFindings.map((f) => f.rule));
+  assert.ok(ruleSet.size >= 2, 'unfiltered scan should return findings from multiple rules');
+
+  // scan with --rule L012 should return only L012 findings
+  const l012Output = runInternalCommand(repoPath, ['scan', '--rule', 'L012', '--format', 'json']);
+  const l012Findings = JSON.parse(l012Output).findings;
+  assert.ok(l012Findings.length >= 1, '--rule L012 should return at least one finding');
+  assert.ok(l012Findings.every((f) => f.rule === 'L012'), 'all --rule L012 findings should be L012');
+
+  // scan with --rule L001 should return only L001 findings (or none)
+  const l001Output = runInternalCommand(repoPath, ['scan', '--rule', 'L001', '--format', 'json']);
+  const l001Findings = JSON.parse(l001Output).findings;
+  assert.ok(l001Findings.every((f) => f.rule === 'L001'), 'all --rule L001 findings should be L001');
 });
