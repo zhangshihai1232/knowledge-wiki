@@ -113,8 +113,8 @@ wiki migrate plan \
 > ⚠️ `--dry-run` 不是 `plan` 的参数。创建计划后，用 `wiki migrate dry-run <plan_id>` 单独执行预检。
 
 dry-run 输出包含：
-- 受影响页面列表（page_id、旧路径、新路径）
-- collision 检测结果（目标路径是否已存在）
+- 受影响页面列表（`path_changes[*].page_id / old_path / new_path`）
+- collision 检测结果（`collisions_detected` + `collisions[*]`，表示目标路径是否已存在）
 - cross_ref 断裂风险（哪些页面引用了将被移动的路径）
 - plan_id（用于后续 apply / rollback）
 
@@ -184,7 +184,7 @@ apply 操作保证：
 wiki internal scan --rule L004
 
 # 检查 alias 是否写入
-wiki internal alias list --page-id <page_id>
+wiki internal alias list --page-id <page_id> --json
 
 # 检查孤立页面（L001）
 wiki internal scan --rule L001

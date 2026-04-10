@@ -9,8 +9,8 @@ const {
   writeFrontmatterFile,
 } = require('./frontmatter');
 const { createCanon, updateDomainIndex } = require('./wiki-internal');
-const { openRuntimeIndex, recordOperation, syncRuntimeFiles, wikiRelative } = require('./runtime-index');
-const { appendLog, findNamedFile, formatDate, updateState } = require('./wiki-repo');
+const { withRuntimeIndex, recordOperation, syncRuntimeFiles, wikiRelative } = require('./runtime-index');
+const { appendLog, findNamedFile, formatDate, runFileWorkflow, updateState } = require('./wiki-repo');
 
 function repoWikiPath(repoRoot, relativePath = '') {
   return path.join(repoRoot, '.wiki', relativePath);
@@ -253,39 +253,57 @@ function compileApprovedProposal(repoRoot, proposalInput) {
   }
 
   const compiledContent = extractCompiledContent(body, frontmatter.action);
-  let result;
-  switch (frontmatter.action) {
-    case 'create':
-      result = compileCreate(repoRoot, proposalPath, frontmatter, compiledContent);
-      break;
-    case 'update':
-      result = compileUpdate(repoRoot, proposalPath, frontmatter, compiledContent);
-      break;
-    case 'archive':
-      result = compileArchive(repoRoot, proposalPath, frontmatter);
-      break;
-    default:
-      throw new Error(`unsupported apply action: ${frontmatter.action}`);
+  const domain = String(frontmatter.target_page || '').split('/').filter(Boolean)[0];
+  const pagePath = repoWikiPath(repoRoot, `canon/domains/${frontmatter.target_page}.md`);
+  const workflowFiles = [
+    proposalPath,
+    pagePath,
+    repoWikiPath(repoRoot, 'changes/LOG.md'),
+    repoWikiPath(repoRoot, 'policy/STATE.md'),
+  ];
+  if (domain) {
+    workflowFiles.push(
+      repoWikiPath(repoRoot, `canon/domains/${domain}/_index.md`),
+      repoWikiPath(repoRoot, 'canon/_index.md')
+    );
   }
 
-  const domain = String(frontmatter.target_page || '').split('/').filter(Boolean)[0];
-  if (domain) {
-    updateDomainIndex(repoRoot, { domain, sync: true });
-  }
-  updateFrontmatterFile(proposalPath, { compiled: true, compiled_at: formatDate() });
-  syncRuntimeFiles(repoRoot, [proposalPath]);
-  appendLog(
-    repoRoot,
-    'changes',
-    'apply',
-    `action: ${frontmatter.action || '~'} | target: ${frontmatter.target_page || '~'} | result: ${result.result} | sources_added: ${result.sourcesAdded} | cross_refs_updated: ${result.refsUpdated} | conflicts: ${result.conflicts}`
-  );
-  updateState(repoRoot, { last_compile: formatDate() });
-  const db = openRuntimeIndex(repoRoot);
-  recordOperation(db, 'apply.run', 'ok', {
-    proposal: wikiRelative(repoRoot, proposalPath),
-    target: frontmatter.target_page || '',
-    action: frontmatter.action || '',
+  const result = runFileWorkflow(repoRoot, workflowFiles, () => {
+    let nextResult;
+    switch (frontmatter.action) {
+      case 'create':
+        nextResult = compileCreate(repoRoot, proposalPath, frontmatter, compiledContent);
+        break;
+      case 'update':
+        nextResult = compileUpdate(repoRoot, proposalPath, frontmatter, compiledContent);
+        break;
+      case 'archive':
+        nextResult = compileArchive(repoRoot, proposalPath, frontmatter);
+        break;
+      default:
+        throw new Error(`unsupported apply action: ${frontmatter.action}`);
+    }
+
+    if (domain) {
+      updateDomainIndex(repoRoot, { domain, sync: true });
+    }
+    updateFrontmatterFile(proposalPath, { compiled: true, compiled_at: formatDate() });
+    syncRuntimeFiles(repoRoot, [proposalPath]);
+    appendLog(
+      repoRoot,
+      'changes',
+      'apply',
+      `action: ${frontmatter.action || '~'} | target: ${frontmatter.target_page || '~'} | result: ${nextResult.result} | sources_added: ${nextResult.sourcesAdded} | cross_refs_updated: ${nextResult.refsUpdated} | conflicts: ${nextResult.conflicts}`
+    );
+    updateState(repoRoot, { last_compile: formatDate() });
+    withRuntimeIndex(repoRoot, (db) => {
+      recordOperation(db, 'apply.run', 'ok', {
+        proposal: wikiRelative(repoRoot, proposalPath),
+        target: frontmatter.target_page || '',
+        action: frontmatter.action || '',
+      });
+    });
+    return nextResult;
   });
   return {
     proposal: wikiRelative(repoRoot, proposalPath),

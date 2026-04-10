@@ -27,4 +27,14 @@ function listMarkdownFiles(targetDir) {
   return results;
 }
 
-module.exports = { normalizePath, listMarkdownFiles };
+function writeFileAtomic(filePath, content) {
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  const tempPath = path.join(
+    path.dirname(filePath),
+    `.${path.basename(filePath)}.${process.pid}.${Date.now()}.tmp`
+  );
+  fs.writeFileSync(tempPath, content, 'utf8');
+  fs.renameSync(tempPath, filePath);
+}
+
+module.exports = { normalizePath, listMarkdownFiles, writeFileAtomic };

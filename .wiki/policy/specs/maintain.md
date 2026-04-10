@@ -46,6 +46,8 @@ quality_gates:
 
 **不触发本 spec 的情形**：单页 L002（由 refresh spec 处理）、格式错误 L001（由 lint 自动修复）。
 
+> `wiki maintain --json` 可直接读取 `l002_count / l004_count / l007_count / l012_count / unclassified_pages` 做路由，不必手动遍历全部 findings。
+
 ---
 
 ## 可执行的维护操作
@@ -75,7 +77,7 @@ wiki migrate dry-run PLAN_ID --json
 
 # 3. 人工批准后执行
 wiki migrate apply PLAN_ID --json
-# 若返回 reclassify collision 错误：先解决冲突页面，再重试 apply
+# 若 dry-run 检出 reclassify collision：先解决冲突页面，再重新 plan/dry-run，确认后再 apply
 
 # 4. 对 subtype_is_null 的剩余未分类页面单独创建计划，或手动逐一处理
 wiki migrate plan \
@@ -97,7 +99,7 @@ wiki migrate rollback PLAN_ID --json
 - 分裂方案须由人工明确批准（不可仅凭 AI 判断执行）
 - 分裂后每个子领域页面数须 ≤ 50
 - 禁止将单个页面拆分；分裂单位为领域（目录）
-- `reclassify collision` 错误表示目标路径已有同名页面 — 须先处理冲突（合并或重命名），再重试 apply
+- `dry-run` 中检出的 `reclassify collision` 表示目标路径已有同名页面 — 须先处理冲突（合并或重命名），再重新 dry-run
 
 **风险**：路径变更会导致外部链接失效；执行前须确认是否存在 wiki 外部的引用。
 

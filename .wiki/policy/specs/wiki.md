@@ -169,7 +169,7 @@ quality_gates:
   1. `wiki migrate plan --op TYPE ...` — 生成计划
   2. `wiki migrate dry-run PLAN_ID` — 预演，展示影响范围，等待人工确认
   3. 人工确认后 → `wiki migrate apply PLAN_ID`
-  4. 出现 `reclassify collision` 错误时 → 走错误恢复流程（合并/重命名/跳过三选一）
+  4. `dry-run` 若检出 `reclassify collision` → 暂停并走恢复流程（合并/重命名/跳过三选一），不应等到 apply 再处理
 
 ---
 
@@ -188,8 +188,8 @@ quality_gates:
 
 - `answer/query` 路由：先调用 `wiki ask "{query}" --json` 做轻量分类（`domain / primary_type / subtype`）并缩小候选上下文，再做语义综合；优先消费其 `contract_version / retrieval / pages / proposals / sources` 结构
 - `absorb/ingest` 路由：由 LLM 先生成结构化 payload，再调用 `wiki import --input payload.json --json`，让 runtime 一次性完成 source / proposal / claims / extracted / dedup evidence 收尾；批处理场景可用 `--input -` 从 stdin 读入
-- `organize/maintain` 路由：优先调用 `wiki maintain --json` 获取统计、结构发现与衰减建议
-- `govern/migrate` 路由：按 `wiki migrate plan → dry-run → apply` 四步流程执行；taxonomy 废弃使用 `wiki taxonomy deprecate KIND ID --replaced-by VALUE`；收到 `reclassify collision` 错误时暂停并展示三选一恢复问题
+- `organize/maintain` 路由：优先调用 `wiki maintain --json` 获取统计、结构发现与衰减建议；优先读取 `l002_count / l004_count / l007_count / l012_count / unclassified_pages`
+- `govern/migrate` 路由：按 `wiki migrate plan → dry-run → apply` 四步流程执行；taxonomy 废弃使用 `wiki taxonomy deprecate KIND ID --replaced-by VALUE`；`dry-run` 若检出 `reclassify collision`，暂停并展示三选一恢复问题
 - 分类治理使用：`wiki taxonomy suggestions / wiki taxonomy accept / wiki taxonomy reject`，用于显式吸收 registry 候选值
 - 队列收尾仍使用：`wiki review / wiki apply / wiki resolve`；其中 agent 读取队列时优先消费 `wiki review --json / wiki apply list --json / wiki resolve --json`，避免解析表格文本
 

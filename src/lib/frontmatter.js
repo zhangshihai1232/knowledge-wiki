@@ -1,6 +1,7 @@
 'use strict';
 
 const fs = require('fs');
+const { writeFileAtomic } = require('./utils');
 
 function stripQuotes(value) {
   if (
@@ -130,7 +131,7 @@ function stringifyFrontmatter(frontmatter) {
 
 function writeFrontmatterFile(filePath, frontmatter, body) {
   const normalizedBody = body.startsWith('\n') ? body : `\n${body}`;
-  fs.writeFileSync(filePath, `${stringifyFrontmatter(frontmatter)}${normalizedBody}`, 'utf8');
+  writeFileAtomic(filePath, `${stringifyFrontmatter(frontmatter)}${normalizedBody}`);
 }
 
 function updateFrontmatterFile(filePath, updates) {

@@ -2,6 +2,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const { writeFileAtomic } = require('./utils');
 
 const ALIASES_FILE = 'aliases.json';
 
@@ -14,13 +15,16 @@ function loadAliases(repoRoot) {
   if (!fs.existsSync(aliasesPath)) {
     return { version: '1.0', path_map: {}, taxonomy_map: {} };
   }
-  return JSON.parse(fs.readFileSync(aliasesPath, 'utf8'));
+  try {
+    return JSON.parse(fs.readFileSync(aliasesPath, 'utf8'));
+  } catch (err) {
+    throw new Error(`alias: invalid JSON in ${aliasesPath}: ${err.message}`);
+  }
 }
 
 function saveAliases(repoRoot, aliases) {
   const aliasesPath = getAliasesPath(repoRoot);
-  fs.mkdirSync(path.dirname(aliasesPath), { recursive: true });
-  fs.writeFileSync(aliasesPath, `${JSON.stringify(aliases, null, 2)}\n`, 'utf8');
+  writeFileAtomic(aliasesPath, `${JSON.stringify(aliases, null, 2)}\n`);
 }
 
 // Record that an old wiki-relative path maps to a stable page_id.

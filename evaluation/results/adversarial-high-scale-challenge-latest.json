@@ -1,0 +1,216 @@
+{
+  "name": "adversarial-high-scale",
+  "tier": "challenge",
+  "generated_at": "2026-04-10T14:53:19.259Z",
+  "duration_ms": 1425,
+  "config": {
+    "pageIdCount": 12000,
+    "aiOverflowPages": 48,
+    "pendingSuggestionCount": 18,
+    "collisionPairs": 12,
+    "renamePages": 16,
+    "subtypePages": 14,
+    "mergeSourceCount": 12,
+    "workflowRepeats": 3
+  },
+  "workload": {
+    "ids_generated": 12000,
+    "pages_generated": 121,
+    "suggestion_entries": 36,
+    "plans_created": 4,
+    "workflow_failures_injected": 9,
+    "proposals_generated": 9,
+    "malicious_inputs_tested": 12
+  },
+  "metrics": {
+    "page_id_collision_rate": 0,
+    "unique_id_rate": 1,
+    "structural_signal_coverage_rate": 1,
+    "l012_visibility_rate": 1,
+    "internal_collision_detection_rate": 1,
+    "dry_run_schema_completeness_rate": 1,
+    "collision_preflight_preservation_rate": 1,
+    "taxonomy_mobility_recovery_rate": 1,
+    "merge_rollback_integrity_rate": 1,
+    "workflow_atomic_recovery_rate": 1,
+    "repo_boundary_rejection_rate": 1
+  },
+  "scenarios": [
+    {
+      "name": "page-id-load",
+      "passed": true,
+      "duration_ms": 19,
+      "workload": {
+        "ids_generated": 12000
+      },
+      "metrics": {
+        "page_id_collision_rate": 0,
+        "unique_id_rate": 1
+      },
+      "notes": [
+        "generated 12000 page_id values without collision"
+      ]
+    },
+    {
+      "name": "structural-signal-density",
+      "passed": true,
+      "duration_ms": 254,
+      "workload": {
+        "pages_generated": 51,
+        "suggestion_entries": 36
+      },
+      "metrics": {
+        "structural_signal_coverage_rate": 1,
+        "l012_visibility_rate": 1
+      },
+      "notes": [
+        "signals=S001, S002, S003, S004, S005"
+      ]
+    },
+    {
+      "name": "migration-collision-matrix",
+      "passed": true,
+      "duration_ms": 105,
+      "workload": {
+        "pages_generated": 24,
+        "plans_created": 1
+      },
+      "metrics": {
+        "internal_collision_detection_rate": 1,
+        "dry_run_schema_completeness_rate": 1,
+        "collision_preflight_preservation_rate": 1
+      },
+      "notes": [
+        "reported 12 internal collisions"
+      ]
+    },
+    {
+      "name": "taxonomy-mobility",
+      "passed": true,
+      "duration_ms": 352,
+      "workload": {
+        "pages_generated": 30,
+        "plans_created": 2
+      },
+      "metrics": {
+        "taxonomy_mobility_recovery_rate": 1
+      },
+      "notes": [
+        "rename_plan=mig_mnt0zwqudlgh_legacy-ai-to-modern-ai",
+        "merge_plan=mig_mnt0zwssz352_playbook-to-workflow"
+      ]
+    },
+    {
+      "name": "merge-fan-in",
+      "passed": true,
+      "duration_ms": 158,
+      "workload": {
+        "pages_generated": 13,
+        "plans_created": 1
+      },
+      "metrics": {
+        "merge_rollback_integrity_rate": 1
+      },
+      "notes": [
+        "fan-in=12"
+      ]
+    },
+    {
+      "name": "workflow-atomicity",
+      "passed": true,
+      "duration_ms": 529,
+      "workload": {
+        "workflow_failures_injected": 9,
+        "proposals_generated": 9,
+        "pages_generated": 3
+      },
+      "metrics": {
+        "workflow_atomic_recovery_rate": 1
+      },
+      "notes": [
+        "recoveries=9/9"
+      ]
+    },
+    {
+      "name": "repo-boundary-adversarial-inputs",
+      "passed": true,
+      "duration_ms": 7,
+      "workload": {
+        "malicious_inputs_tested": 12
+      },
+      "metrics": {
+        "repo_boundary_rejection_rate": 1
+      },
+      "notes": [
+        "rejected=12/12"
+      ]
+    }
+  ],
+  "verdict": {
+    "pass": true,
+    "failing_metrics": [],
+    "failing_scenarios": [],
+    "metric_evaluations": {
+      "page_id_collision_rate": {
+        "actual": 0,
+        "op": "<=",
+        "value": 0,
+        "passed": true
+      },
+      "structural_signal_coverage_rate": {
+        "actual": 1,
+        "op": ">=",
+        "value": 1,
+        "passed": true
+      },
+      "l012_visibility_rate": {
+        "actual": 1,
+        "op": ">=",
+        "value": 1,
+        "passed": true
+      },
+      "internal_collision_detection_rate": {
+        "actual": 1,
+        "op": ">=",
+        "value": 1,
+        "passed": true
+      },
+      "dry_run_schema_completeness_rate": {
+        "actual": 1,
+        "op": ">=",
+        "value": 1,
+        "passed": true
+      },
+      "collision_preflight_preservation_rate": {
+        "actual": 1,
+        "op": ">=",
+        "value": 1,
+        "passed": true
+      },
+      "taxonomy_mobility_recovery_rate": {
+        "actual": 1,
+        "op": ">=",
+        "value": 1,
+        "passed": true
+      },
+      "merge_rollback_integrity_rate": {
+        "actual": 1,
+        "op": ">=",
+        "value": 1,
+        "passed": true
+      },
+      "workflow_atomic_recovery_rate": {
+        "actual": 1,
+        "op": ">=",
+        "value": 1,
+        "passed": true
+      },
+      "repo_boundary_rejection_rate": {
+        "actual": 1,
+        "op": ">=",
+        "value": 1,
+        "passed": true
+      }
+    }
+  }
+}

@@ -136,7 +136,7 @@ wiki migrate plan \
 # 2. 预演确认
 wiki migrate dry-run PLAN_ID --json
 
-# 3. 人工确认后执行（注意 reclassify collision：若目标路径已有内容，先走 Step 3.3 合并）
+# 3. 人工确认后执行（注意：若 dry-run 检出 reclassify collision，先走 Step 3.3 合并）
 wiki migrate apply PLAN_ID --json
 ```
 

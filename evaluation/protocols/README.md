@@ -18,6 +18,7 @@ created_at: 2026-04-09
 
 | 文件 | 目标 |
 |---|---|
+| `adversarial-high-scale-protocol.md` | 在受控条件下继续提高复杂度、数据量、失败注入与边界攻击强度 |
 | `evidence-strengthening-roadmap.md` | 总体路线图、MVP 边界、成功标准 |
 | `real-log-replay-protocol.md` | 真实日志回放实验 |
 | `rater-consistency-protocol.md` | 多评审者一致性实验 |
@@ -29,4 +30,3 @@ created_at: 2026-04-09
 2. judge 必须盲评，不得提前知道组别  
 3. 运行期间不得改规则、改 fixture、改 rubric  
 4. 若使用子 agent 执行，**并发数不得超过 3**
-

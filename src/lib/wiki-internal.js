@@ -11,13 +11,14 @@ const {
   replaceConflictBlock,
 } = require('./frontmatter');
 const {
-  openRuntimeIndex,
   recordOperation,
   searchRuntimeIndex,
   syncRuntimeFiles,
+  withRuntimeIndex,
   wikiRelative,
 } = require('./runtime-index');
 const { appendLog, computeCheckFindings, formatDate, formatTimestamp, updateState } = require('./wiki-repo');
+const { loadAliases } = require('./alias');
 const { getTaxonomySnapshot, normalizeClassification, normalizeList } = require('./taxonomy');
 const { listMarkdownFiles } = require('./utils');
 
@@ -84,19 +85,41 @@ function mergeTagLists(...values) {
   return Array.from(new Set(values.flatMap((value) => normalizeList(value)).filter(Boolean)));
 }
 
+function isPathWithinRoot(root, candidate) {
+  const relative = path.relative(root, candidate);
+  return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
+}
+
 function resolveInternalFile(repoRoot, target) {
-  const normalizedTarget = target.replace(/^\.wiki\//, '').replace(/\\/g, '/');
-  const candidates = [
-    path.resolve(process.cwd(), target),
-    path.resolve(repoRoot, target),
-    repoWikiPath(repoRoot, normalizedTarget),
-  ];
+  const normalizedTarget = String(target || '').replace(/^\.wiki\//, '').replace(/\\/g, '/');
+  if (!normalizedTarget) {
+    throw new Error('resolveInternalFile: target path is required');
+  }
+  if (!path.isAbsolute(target) && normalizedTarget.split('/').some((segment) => segment === '..')) {
+    throw new Error(`resolveInternalFile: path traversal is not allowed: ${target}`);
+  }
+  const allowedRoots = [path.resolve(process.cwd()), path.resolve(repoRoot)];
+  const candidates = path.isAbsolute(target)
+    ? [path.resolve(target)]
+    : [
+        path.resolve(process.cwd(), target),
+        path.resolve(repoRoot, target),
+        repoWikiPath(repoRoot, normalizedTarget),
+      ];
   for (const candidate of candidates) {
     if (fs.existsSync(candidate)) {
+      const realCandidate = fs.realpathSync(candidate);
+      if (!allowedRoots.some((root) => isPathWithinRoot(root, realCandidate))) {
+        throw new Error(`resolveInternalFile: path escapes allowed roots: ${target}`);
+      }
       return candidate;
     }
   }
-  return path.resolve(process.cwd(), target);
+  const fallback = path.isAbsolute(target) ? path.resolve(target) : path.resolve(process.cwd(), target);
+  if (!allowedRoots.some((root) => isPathWithinRoot(root, fallback))) {
+    throw new Error(`resolveInternalFile: path escapes allowed roots: ${target}`);
+  }
+  return fallback;
 }
 
 function createSource(repoRoot, options) {
@@ -509,14 +532,15 @@ function countThings(repoRoot, target = 'all') {
 }
 
 function dedupCheck(repoRoot, targetPage) {
-  const db = openRuntimeIndex(repoRoot);
-  const row = db
-    .prepare("SELECT path FROM proposals WHERE target_page = ? AND status IN ('inbox', 'review') ORDER BY proposed_at ASC LIMIT 1")
-    .get(targetPage);
-  if (row) {
-    return { duplicate: true, path: row.path };
-  }
-  return { duplicate: false };
+  return withRuntimeIndex(repoRoot, (db) => {
+    const row = db
+      .prepare("SELECT path FROM proposals WHERE target_page = ? AND status IN ('inbox', 'review') ORDER BY proposed_at ASC LIMIT 1")
+      .get(targetPage);
+    if (row) {
+      return { duplicate: true, path: row.path };
+    }
+    return { duplicate: false };
+  });
 }
 
 function resolveConflict(repoRoot, canonPathInput, mergedFileInput) {
@@ -729,18 +753,19 @@ function validateWikiFile(repoRoot, fileInput, explicitSchema = '') {
 }
 
 function consecutiveApproveCount(repoRoot) {
-  const db = openRuntimeIndex(repoRoot);
-  const rows = db.prepare("SELECT decision FROM reviews ORDER BY reviewed_at DESC").all();
-  let count = 0;
-  for (const row of rows) {
-    if (row.decision === 'rejected') {
-      break;
+  return withRuntimeIndex(repoRoot, (db) => {
+    const rows = db.prepare("SELECT decision FROM reviews ORDER BY reviewed_at DESC").all();
+    let count = 0;
+    for (const row of rows) {
+      if (row.decision === 'rejected') {
+        break;
+      }
+      if (row.decision === 'approved') {
+        count += 1;
+      }
     }
-    if (row.decision === 'approved') {
-      count += 1;
-    }
-  }
-  return count;
+    return count;
+  });
 }
 
 function renderFindings(findings) {
@@ -846,11 +871,12 @@ function importWorkflow(repoRoot, payload) {
     `source: ${wikiRelative(repoRoot, sourcePath)} | proposal: ${proposalPath ? wikiRelative(repoRoot, proposalPath) : 'dedup-hit'}`
   );
   updateState(repoRoot);
-  const db = openRuntimeIndex(repoRoot);
-  recordOperation(db, 'workflow.import', 'ok', {
-    source: wikiRelative(repoRoot, sourcePath),
-    proposal: proposalPath ? wikiRelative(repoRoot, proposalPath) : null,
-    duplicate: dedup.duplicate,
+  withRuntimeIndex(repoRoot, (db) => {
+    recordOperation(db, 'workflow.import', 'ok', {
+      source: wikiRelative(repoRoot, sourcePath),
+      proposal: proposalPath ? wikiRelative(repoRoot, proposalPath) : null,
+      duplicate: dedup.duplicate,
+    });
   });
   return {
     source: wikiRelative(repoRoot, sourcePath),
@@ -861,8 +887,9 @@ function importWorkflow(repoRoot, payload) {
 
 function askWorkflow(repoRoot, query, limit = 5) {
   const result = searchRuntimeIndex(repoRoot, query, limit);
-  const db = openRuntimeIndex(repoRoot);
-  recordOperation(db, 'workflow.ask', 'ok', { query, limit });
+  withRuntimeIndex(repoRoot, (db) => {
+    recordOperation(db, 'workflow.ask', 'ok', { query, limit });
+  });
   return result;
 }
 
@@ -872,20 +899,26 @@ function maintainWorkflow(repoRoot, options = {}) {
   const decays = options.applyDecay ? decayConfidence(repoRoot) : [];
   const taxonomy = getTaxonomySnapshot(repoRoot);
   updateState(repoRoot, options.applyDecay ? { last_lint: formatDate() } : {});
-  const db = openRuntimeIndex(repoRoot);
   // Separate structural classification signals (S00x) from content lint findings
   const structuralSignals = findings.filter((item) => item.rule.startsWith('S'));
   const lintFindings = findings.filter((item) => !item.rule.startsWith('S'));
-  recordOperation(db, 'workflow.maintain', 'ok', {
-    findings: lintFindings.length,
-    structural_signals: structuralSignals.length,
-    decays: decays.length,
-    pending_taxonomy_suggestions: taxonomy.pending_suggestions,
+  withRuntimeIndex(repoRoot, (db) => {
+    recordOperation(db, 'workflow.maintain', 'ok', {
+      findings: lintFindings.length,
+      structural_signals: structuralSignals.length,
+      decays: decays.length,
+      pending_taxonomy_suggestions: taxonomy.pending_suggestions,
+    });
   });
   return {
     counts,
     findings: lintFindings,
     structural_signals: structuralSignals,
+    // Per-rule summary counts for direct LLM routing decisions
+    l002_count: lintFindings.filter((f) => f.rule === 'L002').length,
+    l004_count: lintFindings.filter((f) => f.rule === 'L004').length,
+    l007_count: lintFindings.filter((f) => f.rule === 'L007').length,
+    l012_count: lintFindings.filter((f) => f.rule === 'L012').length,
     unclassified_pages: lintFindings.filter((f) => f.rule === 'L012').length,
     decays,
     taxonomy,
@@ -1146,6 +1179,37 @@ function runInternalCommand(repoRoot, args) {
       const proposalPath = args[1];
       const evidenceIndex = args.indexOf('--evidence');
       return mergeProposalEvidence(repoRoot, proposalPath, evidenceIndex >= 0 ? args[evidenceIndex + 1] : '');
+    }
+    case 'alias': {
+      // wiki internal alias list [--page-id <id>] [--json]
+      if (args[1] !== 'list') {
+        throw new Error('alias: requires list subcommand');
+      }
+      const pageIdIdx = args.indexOf('--page-id');
+      const filterPageId = pageIdIdx >= 0 ? args[pageIdIdx + 1] : null;
+      const jsonOutput = args.includes('--json');
+      const aliases = loadAliases(repoRoot);
+      const pathMap = aliases.path_map || {};
+      const taxonomyMap = aliases.taxonomy_map || {};
+
+      if (filterPageId) {
+        // Return all old paths that map to this page_id
+        const matchingPaths = Object.entries(pathMap)
+          .filter(([, pid]) => pid === filterPageId)
+          .map(([oldPath]) => oldPath);
+        if (jsonOutput) {
+          return { page_id: filterPageId, old_paths: matchingPaths };
+        }
+        return matchingPaths.length > 0
+          ? matchingPaths.join('\n')
+          : `(no aliases found for page_id: ${filterPageId})`;
+      }
+
+      if (jsonOutput) {
+        return { path_map: pathMap, taxonomy_map: taxonomyMap };
+      }
+      const lines = Object.entries(pathMap).map(([oldPath, pid]) => `${oldPath} → ${pid}`);
+      return lines.length > 0 ? lines.join('\n') : '(no path aliases recorded)';
     }
     case 'frontmatter':
       if (args[1] === 'get') {

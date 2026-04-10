@@ -144,10 +144,10 @@ function usage() {
   ${COMMAND_NAME} taxonomy deprecate KIND ID [--replaced-by VALUE] [--json]
   ${COMMAND_NAME} taxonomy validate DOMAIN [--primary-type TYPE] [--subtype SUBTYPE] [--json]
   ${COMMAND_NAME} review [list] [--json]
-  ${COMMAND_NAME} review approve PROPOSAL --by NAME --note TEXT [--json]
-  ${COMMAND_NAME} review reject PROPOSAL --by NAME --reason TEXT [--json]
-  ${COMMAND_NAME} review reopen PROPOSAL [--reason TEXT] [--json]
-  ${COMMAND_NAME} review revise PROPOSAL --note TEXT [--json]
+  ${COMMAND_NAME} review approve PROPOSAL --by NAME --note TEXT [--at TIMESTAMP] [--json]
+  ${COMMAND_NAME} review reject PROPOSAL --by NAME --reason TEXT [--at TIMESTAMP] [--json]
+  ${COMMAND_NAME} review reopen PROPOSAL [--reason TEXT] [--at TIMESTAMP] [--json]
+  ${COMMAND_NAME} review revise PROPOSAL --note TEXT [--at TIMESTAMP] [--json]
   ${COMMAND_NAME} apply [run [PROPOSAL] | list] [--json]
   ${COMMAND_NAME} resolve [list] [--json]
   ${COMMAND_NAME} resolve apply PROPOSAL --merged-file FILE --by NAME --as TEXT [--page FILE] [--confidence VALUE] [--json]
@@ -682,6 +682,9 @@ function runResolve(configPath, repoOverride, args) {
         break;
       case '--confidence':
         options.confidence = args[index + 1] || '';
+        if (options.confidence && !['high', 'medium', 'low'].includes(options.confidence)) {
+          die(`resolve apply --confidence must be high|medium|low, got '${options.confidence}'`);
+        }
         index += 1;
         break;
       case '--json':

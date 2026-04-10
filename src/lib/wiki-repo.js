@@ -3,12 +3,25 @@
 const fs = require('fs');
 const path = require('path');
 const { parseFrontmatterFile, updateFrontmatterFile, replaceConflictBlock } = require('./frontmatter');
-const { openRuntimeIndex, recordOperation, rebuildRuntimeIndex, syncRuntimeFiles, wikiRelative } = require('./runtime-index');
+const { withRuntimeIndex, recordOperation, syncRuntimeFiles, wikiRelative } = require('./runtime-index');
 const { getTaxonomySnapshot } = require('./taxonomy');
-const { normalizePath, listMarkdownFiles } = require('./utils');
+const { normalizePath, listMarkdownFiles, writeFileAtomic } = require('./utils');
 
 function repoRelative(repoRoot, absolutePath) {
   return normalizePath(path.relative(repoRoot, absolutePath));
+}
+
+function isPathWithinRoot(root, candidate) {
+  const relative = path.relative(root, candidate);
+  return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
+}
+
+function hasPathTraversal(target) {
+  return String(target || '')
+    .replace(/^\.wiki\//, '')
+    .replace(/\\/g, '/')
+    .split('/')
+    .some((segment) => segment === '..');
 }
 
 function formatDate(date = new Date()) {
@@ -21,6 +34,9 @@ function formatTimestamp(date = new Date()) {
 
 function findNamedFile(repoRoot, target, stageDirs) {
   const normalizedTarget = target.replace(/^\.wiki\//, '').replace(/\\/g, '/');
+  if (hasPathTraversal(target)) {
+    throw new Error(`invalid file path: ${target}`);
+  }
   const directCandidates = [
     path.resolve(process.cwd(), target),
     path.resolve(repoRoot, target),
@@ -29,6 +45,10 @@ function findNamedFile(repoRoot, target, stageDirs) {
 
   for (const candidate of directCandidates) {
     if (fs.existsSync(candidate) && fs.statSync(candidate).isFile()) {
+      const realCandidate = fs.realpathSync(candidate);
+      if (!isPathWithinRoot(repoRoot, realCandidate)) {
+        throw new Error(`file path escapes repo root: ${target}`);
+      }
       return candidate;
     }
   }
@@ -53,8 +73,12 @@ function findNamedFile(repoRoot, target, stageDirs) {
   throw new Error(`file not found: ${target}`);
 }
 
-function resolveUserFile(repoRoot, target) {
+function resolveUserFile(repoRoot, target, options = {}) {
+  const allowExternal = options.allowExternal === true;
   const normalizedTarget = target.replace(/^\.wiki\//, '').replace(/\\/g, '/');
+  if (!allowExternal && hasPathTraversal(target)) {
+    throw new Error(`invalid file path: ${target}`);
+  }
   const candidates = [
     path.resolve(process.cwd(), target),
     path.resolve(repoRoot, target),
@@ -63,11 +87,69 @@ function resolveUserFile(repoRoot, target) {
 
   for (const candidate of candidates) {
     if (fs.existsSync(candidate) && fs.statSync(candidate).isFile()) {
+      if (!allowExternal) {
+        const realCandidate = fs.realpathSync(candidate);
+        if (!isPathWithinRoot(repoRoot, realCandidate)) {
+          throw new Error(`file path escapes repo root: ${target}`);
+        }
+      }
       return candidate;
     }
   }
 
-  return path.resolve(process.cwd(), target);
+  const fallback = path.resolve(process.cwd(), target);
+  if (!allowExternal && !isPathWithinRoot(repoRoot, fallback)) {
+    throw new Error(`file path escapes repo root: ${target}`);
+  }
+  return fallback;
+}
+
+function snapshotFile(filePath) {
+  return {
+    path: filePath,
+    existed: fs.existsSync(filePath),
+    content: fs.existsSync(filePath) ? fs.readFileSync(filePath, 'utf8') : null,
+  };
+}
+
+function restoreFileSnapshot(snapshot) {
+  if (snapshot.existed) {
+    writeFileAtomic(snapshot.path, snapshot.content);
+    return;
+  }
+  if (fs.existsSync(snapshot.path)) {
+    fs.rmSync(snapshot.path, { force: true });
+  }
+}
+
+function isWikiMarkdownFile(repoRoot, filePath) {
+  const wikiRoot = path.join(repoRoot, '.wiki');
+  return filePath.endsWith('.md') && isPathWithinRoot(wikiRoot, path.resolve(filePath));
+}
+
+function runFileWorkflow(repoRoot, filePaths, operation) {
+  const uniquePaths = Array.from(new Set((filePaths || []).filter(Boolean).map((item) => path.resolve(item))));
+  const snapshots = uniquePaths.map((filePath) => snapshotFile(filePath));
+  try {
+    return operation();
+  } catch (err) {
+    let rollbackError = null;
+    try {
+      for (const snapshot of snapshots.slice().reverse()) {
+        restoreFileSnapshot(snapshot);
+      }
+      const wikiMarkdownPaths = uniquePaths.filter((filePath) => isWikiMarkdownFile(repoRoot, filePath));
+      if (wikiMarkdownPaths.length > 0) {
+        syncRuntimeFiles(repoRoot, wikiMarkdownPaths);
+      }
+    } catch (restoreErr) {
+      rollbackError = restoreErr;
+    }
+    if (rollbackError) {
+      throw new Error(`${err.message} (workflow rollback also failed: ${rollbackError.message})`);
+    }
+    throw err;
+  }
 }
 
 function appendLog(repoRoot, target, spec, message, extraFields = []) {
@@ -85,27 +167,30 @@ function appendLog(repoRoot, target, spec, message, extraFields = []) {
   for (const field of extraFields) {
     lines.push(`- ${field}`);
   }
-  fs.appendFileSync(logFile, `${lines.join('\n')}\n`, 'utf8');
+  const current = fs.readFileSync(logFile, 'utf8');
+  writeFileAtomic(logFile, `${current}${lines.join('\n')}\n`);
 }
 
 function updateState(repoRoot, overrides = {}) {
   const stateFile = path.join(repoRoot, '.wiki', 'policy', 'STATE.md');
-  const db = openRuntimeIndex(repoRoot);
   const taxonomy = getTaxonomySnapshot(repoRoot);
-  const summary = {
-    total_sources: db.prepare('SELECT COUNT(*) AS count FROM sources').get().count,
-    total_canon_pages: db.prepare('SELECT COUNT(*) AS count FROM pages WHERE status != ?').get('archived').count,
-    total_domains: db
-      .prepare("SELECT COUNT(DISTINCT domain) AS count FROM pages WHERE status != 'archived' AND COALESCE(domain, '') != ''")
-      .get().count,
-    pending_proposals: db.prepare('SELECT COUNT(*) AS count FROM proposals WHERE status IN (?, ?)').get('inbox', 'review').count,
-    pending_taxonomy_suggestions: taxonomy.pending_suggestions,
-    last_promote_at: overrides.last_promote_at,
-    last_compile: overrides.last_compile,
-    last_lint: overrides.last_lint,
-    open_conflicts: db.prepare('SELECT COUNT(*) AS count FROM proposals WHERE status = ?').get('conflict').count,
-  };
-  recordOperation(db, 'state.update', 'ok', summary);
+  const summary = withRuntimeIndex(repoRoot, (db) => {
+    const nextSummary = {
+      total_sources: db.prepare('SELECT COUNT(*) AS count FROM sources').get().count,
+      total_canon_pages: db.prepare('SELECT COUNT(*) AS count FROM pages WHERE status != ?').get('archived').count,
+      total_domains: db
+        .prepare("SELECT COUNT(DISTINCT domain) AS count FROM pages WHERE status != 'archived' AND COALESCE(domain, '') != ''")
+        .get().count,
+      pending_proposals: db.prepare('SELECT COUNT(*) AS count FROM proposals WHERE status IN (?, ?)').get('inbox', 'review').count,
+      pending_taxonomy_suggestions: taxonomy.pending_suggestions,
+      last_promote_at: overrides.last_promote_at,
+      last_compile: overrides.last_compile,
+      last_lint: overrides.last_lint,
+      open_conflicts: db.prepare('SELECT COUNT(*) AS count FROM proposals WHERE status = ?').get('conflict').count,
+    };
+    recordOperation(db, 'state.update', 'ok', nextSummary);
+    return nextSummary;
+  });
 
   let text = fs.readFileSync(stateFile, 'utf8');
   const replaceBullet = (key, value) => {
@@ -133,63 +218,65 @@ function updateState(repoRoot, overrides = {}) {
   replaceBullet('open_conflicts', summary.open_conflicts);
   text = text.replace(/updated_at: .*/, `updated_at: ${formatDate()}`);
 
-  fs.writeFileSync(stateFile, text, 'utf8');
+  writeFileAtomic(stateFile, text);
   return summary;
 }
 
 function getProposalRows(repoRoot, stages) {
-  const db = openRuntimeIndex(repoRoot);
-  const placeholders = stages.map(() => '?').join(', ');
-  const rows = db
-    .prepare(
-      `SELECT path, status, action, target_page, proposed_at, reviewed_at, compiled
-       FROM proposals WHERE status IN (${placeholders})
-       ORDER BY proposed_at ASC, path ASC`
-    )
-    .all(...stages);
-  recordOperation(db, 'queue.read', 'ok', { stages });
-  return rows.map((row) => ({
-    proposal: row.path,
-    stage: row.status,
-    action: row.action || '~',
-    targetPage: row.target_page || '~',
-    proposedAt: row.proposed_at || '~',
-    reviewedAt: row.reviewed_at || '~',
-    compiled: row.compiled || 'false',
-  }));
+  return withRuntimeIndex(repoRoot, (db) => {
+    const placeholders = stages.map(() => '?').join(', ');
+    const rows = db
+      .prepare(
+        `SELECT path, status, action, target_page, proposed_at, reviewed_at, compiled
+         FROM proposals WHERE status IN (${placeholders})
+         ORDER BY proposed_at ASC, path ASC`
+      )
+      .all(...stages);
+    recordOperation(db, 'queue.read', 'ok', { stages });
+    return rows.map((row) => ({
+      proposal: row.path,
+      stage: row.status,
+      action: row.action || '~',
+      targetPage: row.target_page || '~',
+      proposedAt: row.proposed_at || '~',
+      reviewedAt: row.reviewed_at || '~',
+      compiled: row.compiled || 'false',
+    }));
+  });
 }
 
 function getConflictRows(repoRoot) {
-  const db = openRuntimeIndex(repoRoot);
-  const rows = db
-    .prepare(
-      `SELECT path, target_page, conflict_location, trigger_source, proposed_at
-       FROM proposals WHERE status = 'conflict'
-       ORDER BY proposed_at ASC, path ASC`
-    )
-    .all();
-  recordOperation(db, 'conflict.read', 'ok', {});
-  return rows.map((row) => ({
-    proposal: row.path,
-    targetPage: row.target_page || '~',
-    conflictLocation: row.conflict_location || '~',
-    triggerSource: row.trigger_source || '~',
-    proposedAt: row.proposed_at || '~',
-  }));
+  return withRuntimeIndex(repoRoot, (db) => {
+    const rows = db
+      .prepare(
+        `SELECT path, target_page, conflict_location, trigger_source, proposed_at
+         FROM proposals WHERE status = 'conflict'
+         ORDER BY proposed_at ASC, path ASC`
+      )
+      .all();
+    recordOperation(db, 'conflict.read', 'ok', {});
+    return rows.map((row) => ({
+      proposal: row.path,
+      targetPage: row.target_page || '~',
+      conflictLocation: row.conflict_location || '~',
+      triggerSource: row.trigger_source || '~',
+      proposedAt: row.proposed_at || '~',
+    }));
+  });
 }
 
 function computeCheckFindings(repoRoot) {
-  const db = openRuntimeIndex(repoRoot);
-  db.exec('DELETE FROM lint_findings');
-  const findings = [];
-  const pushFinding = (ruleId, severity, targetPath, message) => {
-    findings.push({ rule: ruleId, severity, targetPath, message });
-    db.prepare('INSERT INTO lint_findings (rule_id, severity, target_path, message) VALUES (?, ?, ?, ?)')
-      .run(ruleId, severity, targetPath, message);
-  };
+  return withRuntimeIndex(repoRoot, (db) => {
+    db.exec('DELETE FROM lint_findings');
+    const findings = [];
+    const pushFinding = (ruleId, severity, targetPath, message) => {
+      findings.push({ rule: ruleId, severity, targetPath, message });
+      db.prepare('INSERT INTO lint_findings (rule_id, severity, target_path, message) VALUES (?, ?, ?, ?)')
+        .run(ruleId, severity, targetPath, message);
+    };
 
-  const pages = db.prepare('SELECT * FROM pages ORDER BY path').all();
-  const pageSlugSet = new Set(pages.map((row) => row.slug));
+    const pages = db.prepare('SELECT * FROM pages ORDER BY path').all();
+    const pageSlugSet = new Set(pages.map((row) => row.slug));
 
   const indexedPages = new Set();
   for (const indexFile of listMarkdownFiles(path.join(repoRoot, '.wiki', 'canon'))) {
@@ -364,8 +451,9 @@ function computeCheckFindings(repoRoot) {
     }
   }
 
-  recordOperation(db, 'check.run', 'ok', { findings: findings.length });
-  return findings;
+    recordOperation(db, 'check.run', 'ok', { findings: findings.length });
+    return findings;
+  });
 }
 
 function applyReviewDecision(repoRoot, decision, proposalInput, options) {
@@ -379,6 +467,7 @@ function applyReviewDecision(repoRoot, decision, proposalInput, options) {
     revise: 'review',
   };
   const destination = destinationMap[decision];
+  const destinationPath = path.join(repoRoot, '.wiki', 'changes', destination, path.basename(proposalPath));
   const now = formatTimestamp();
   const updates = {};
 
@@ -414,30 +503,41 @@ function applyReviewDecision(repoRoot, decision, proposalInput, options) {
     throw new Error(`unknown review decision: ${decision}`);
   }
 
-  updateFrontmatterFile(proposalPath, updates);
-  const destinationPath = path.join(repoRoot, '.wiki', 'changes', destination, path.basename(proposalPath));
-  fs.mkdirSync(path.dirname(destinationPath), { recursive: true });
-  if (proposalPath !== destinationPath) {
-    fs.renameSync(proposalPath, destinationPath);
-  }
-  syncRuntimeFiles(repoRoot, [proposalPath, destinationPath]);
-
-  appendLog(
+  runFileWorkflow(
     repoRoot,
-    'changes',
-    'review',
-    `decision: ${decision} | file: ${wikiRelative(repoRoot, destinationPath)} | target: ${proposal.target_page || '~'} | action: ${proposal.action || '~'} | by: ${options.reviewedBy || 'system'}`
+    [
+      proposalPath,
+      destinationPath,
+      path.join(repoRoot, '.wiki', 'changes', 'LOG.md'),
+      path.join(repoRoot, '.wiki', 'policy', 'STATE.md'),
+    ],
+    () => {
+      updateFrontmatterFile(proposalPath, updates);
+      fs.mkdirSync(path.dirname(destinationPath), { recursive: true });
+      if (proposalPath !== destinationPath) {
+        fs.renameSync(proposalPath, destinationPath);
+      }
+      syncRuntimeFiles(repoRoot, [proposalPath, destinationPath]);
+
+      appendLog(
+        repoRoot,
+        'changes',
+        'review',
+        `decision: ${decision} | file: ${wikiRelative(repoRoot, destinationPath)} | target: ${proposal.target_page || '~'} | action: ${proposal.action || '~'} | by: ${options.reviewedBy || 'system'}`
+      );
+      updateState(repoRoot, { last_promote_at: options.reviewedAt || now });
+      withRuntimeIndex(repoRoot, (db) => {
+        recordOperation(db, 'review.apply', 'ok', { decision, proposal: wikiRelative(repoRoot, destinationPath) });
+      });
+    }
   );
-  updateState(repoRoot, { last_promote_at: options.reviewedAt || now });
-  const db = openRuntimeIndex(repoRoot);
-  recordOperation(db, 'review.apply', 'ok', { decision, proposal: wikiRelative(repoRoot, destinationPath) });
   return destinationPath;
 }
 
 function applyResolve(repoRoot, proposalInput, options) {
   const proposalPath = findNamedFile(repoRoot, proposalInput, ['conflicts']);
   const proposal = parseFrontmatterFile(proposalPath).frontmatter;
-  const mergedFilePath = resolveUserFile(repoRoot, options.mergedFile);
+  const mergedFilePath = resolveUserFile(repoRoot, options.mergedFile, { allowExternal: true });
   if (!fs.existsSync(mergedFilePath)) {
     throw new Error(`merged file not found: ${mergedFilePath}`);
   }
@@ -448,36 +548,49 @@ function applyResolve(repoRoot, proposalInput, options) {
     throw new Error(`canon page not found: ${pagePath}`);
   }
 
-  const mergedContent = fs.readFileSync(mergedFilePath, 'utf8');
-  replaceConflictBlock(pagePath, mergedContent);
-  const pageUpdates = {
-    last_compiled: formatDate(),
-    staleness_days: 0,
-  };
-  if (options.confidence) {
-    pageUpdates.confidence = options.confidence;
-  }
-  updateFrontmatterFile(pagePath, pageUpdates);
-  updateFrontmatterFile(proposalPath, {
-    status: 'resolved',
-    resolved_at: formatDate(),
-    resolved_by: options.resolvedBy,
-    resolution: options.resolution,
-  });
   const resolvedPath = path.join(repoRoot, '.wiki', 'changes', 'resolved', path.basename(proposalPath));
-  fs.mkdirSync(path.dirname(resolvedPath), { recursive: true });
-  fs.renameSync(proposalPath, resolvedPath);
-  syncRuntimeFiles(repoRoot, [pagePath, proposalPath, resolvedPath]);
-
-  appendLog(
+  const mergedContent = fs.readFileSync(mergedFilePath, 'utf8');
+  runFileWorkflow(
     repoRoot,
-    'changes',
-    'resolve',
-    `target: ${proposal.target_page || repoRelative(repoRoot, pagePath)} | resolution: ${options.resolution} | resolved_by: ${options.resolvedBy}`
+    [
+      pagePath,
+      proposalPath,
+      resolvedPath,
+      path.join(repoRoot, '.wiki', 'changes', 'LOG.md'),
+      path.join(repoRoot, '.wiki', 'policy', 'STATE.md'),
+    ],
+    () => {
+      replaceConflictBlock(pagePath, mergedContent);
+      const pageUpdates = {
+        last_compiled: formatDate(),
+        staleness_days: 0,
+      };
+      if (options.confidence) {
+        pageUpdates.confidence = options.confidence;
+      }
+      updateFrontmatterFile(pagePath, pageUpdates);
+      updateFrontmatterFile(proposalPath, {
+        status: 'resolved',
+        resolved_at: formatDate(),
+        resolved_by: options.resolvedBy,
+        resolution: options.resolution,
+      });
+      fs.mkdirSync(path.dirname(resolvedPath), { recursive: true });
+      fs.renameSync(proposalPath, resolvedPath);
+      syncRuntimeFiles(repoRoot, [pagePath, proposalPath, resolvedPath]);
+
+      appendLog(
+        repoRoot,
+        'changes',
+        'resolve',
+        `target: ${proposal.target_page || repoRelative(repoRoot, pagePath)} | resolution: ${options.resolution} | resolved_by: ${options.resolvedBy}`
+      );
+      updateState(repoRoot, { last_compile: formatDate() });
+      withRuntimeIndex(repoRoot, (db) => {
+        recordOperation(db, 'resolve.apply', 'ok', { proposal: wikiRelative(repoRoot, resolvedPath) });
+      });
+    }
   );
-  updateState(repoRoot, { last_compile: formatDate() });
-  const db = openRuntimeIndex(repoRoot);
-  recordOperation(db, 'resolve.apply', 'ok', { proposal: wikiRelative(repoRoot, resolvedPath) });
   return { pagePath, resolvedPath };
 }
 
@@ -493,5 +606,6 @@ module.exports = {
   getProposalRows,
   repoRelative,
   resolveUserFile,
+  runFileWorkflow,
   updateState,
 };

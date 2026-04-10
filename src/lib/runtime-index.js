@@ -340,25 +340,28 @@ function upsertProposalFile(db, repoRoot, filePath) {
 
 function syncRuntimeFiles(repoRoot, filePaths) {
   const db = openRuntimeIndex(repoRoot);
-  for (const entry of filePaths) {
-    const filePath = path.isAbsolute(entry) ? entry : path.join(repoRoot, '.wiki', entry.replace(/^\.wiki\//, ''));
-    const relPath = path.isAbsolute(entry) ? wikiRelative(repoRoot, filePath) : entry.replace(/^\.wiki\//, '');
-    if (!relPath.endsWith('.md')) {
-      continue;
+  try {
+    for (const entry of filePaths) {
+      const filePath = path.isAbsolute(entry) ? entry : path.join(repoRoot, '.wiki', entry.replace(/^\.wiki\//, ''));
+      const relPath = path.isAbsolute(entry) ? wikiRelative(repoRoot, filePath) : entry.replace(/^\.wiki\//, '');
+      if (!relPath.endsWith('.md')) {
+        continue;
+      }
+      if (!fs.existsSync(filePath)) {
+        deleteIndexedPath(db, relPath);
+        continue;
+      }
+      if (relPath.startsWith('canon/domains/')) {
+        upsertPageFile(db, repoRoot, filePath);
+      } else if (relPath.startsWith('sources/')) {
+        upsertSourceFile(db, repoRoot, filePath);
+      } else if (relPath.startsWith('changes/')) {
+        upsertProposalFile(db, repoRoot, filePath);
+      }
     }
-    if (!fs.existsSync(filePath)) {
-      deleteIndexedPath(db, relPath);
-      continue;
-    }
-    if (relPath.startsWith('canon/domains/')) {
-      upsertPageFile(db, repoRoot, filePath);
-    } else if (relPath.startsWith('sources/')) {
-      upsertSourceFile(db, repoRoot, filePath);
-    } else if (relPath.startsWith('changes/')) {
-      upsertProposalFile(db, repoRoot, filePath);
-    }
+  } finally {
+    db.close();
   }
-  return db;
 }
 
 function rebuildRuntimeIndex(repoRoot) {
@@ -389,9 +392,20 @@ function openRuntimeIndex(repoRoot) {
   const needsRebuild = !fs.existsSync(dbPath);
   const db = ensureDatabase(repoRoot);
   if (needsRebuild || !hasRuntimeIndexData(db)) {
+    // Close the initial handle before rebuild to avoid two open handles on same file.
+    db.close();
     return rebuildRuntimeIndex(repoRoot);
   }
   return db;
+}
+
+function withRuntimeIndex(repoRoot, operation) {
+  const db = openRuntimeIndex(repoRoot);
+  try {
+    return operation(db);
+  } finally {
+    db.close();
+  }
 }
 
 function escapeLike(value) {
@@ -631,131 +645,132 @@ function takeTopMatches(rows, rankFn, mapFn, query, tokens, hints, limit) {
 }
 
 function searchRuntimeIndex(repoRoot, query, limit = 5) {
-  const db = openRuntimeIndex(repoRoot);
-  const normalizedQuery = query.trim();
-  const pageCandidates = db
-    .prepare(
-      `SELECT path, title, domain, confidence, slug, primary_type, subtype, tags_json, content, page_id, collection, secondary_domains_json
-       FROM pages
-       WHERE status != 'archived'
-       ORDER BY path ASC`
-    )
-    .all();
-  const proposalCandidates = db
-    .prepare(
-      `SELECT path, status, action, target_page, domain, primary_type, subtype, tags_json, content
-       FROM proposals
-       ORDER BY proposed_at DESC, path ASC`
-    )
-    .all();
-  const sourceCandidates = db
-    .prepare(
-      `SELECT path, title, source_kind, domain, primary_type, subtype, tags_json, extracted, content
-       FROM sources
-       ORDER BY ingested_at DESC, path ASC`
-    )
-    .all();
-  const runtimeDomains = Array.from(new Set([
-    ...pageCandidates.map((row) => row.domain),
-    ...proposalCandidates.map((row) => row.domain),
-    ...sourceCandidates.map((row) => row.domain),
-  ].filter(Boolean)));
-  const runtimeCollections = Array.from(new Set(
-    pageCandidates.map((row) => row.collection).filter(Boolean)
-  ));
-  const hints = buildQueryHints(repoRoot, normalizedQuery, { runtimeDomains, runtimeCollections });
-  const tokens = hints.tokens.length ? hints.tokens : tokenizeQuery(normalizedQuery);
-  const filteredPageCandidates = applyFieldFilters(pageCandidates, hints, { usePrimaryType: true, useSubtype: true, useCollection: true });
-  const filteredProposalCandidates = applyFieldFilters(proposalCandidates, hints, { usePrimaryType: true, useSubtype: true });
-  const filteredSourceCandidates = applyFieldFilters(sourceCandidates, hints, {
-    usePrimaryType: hints.primary_type_hints.includes('source'),
-    useSubtype: true,
-  });
+  return withRuntimeIndex(repoRoot, (db) => {
+    const normalizedQuery = query.trim();
+    const pageCandidates = db
+      .prepare(
+        `SELECT path, title, domain, confidence, slug, primary_type, subtype, tags_json, content, page_id, collection, secondary_domains_json
+         FROM pages
+         WHERE status != 'archived'
+         ORDER BY path ASC`
+      )
+      .all();
+    const proposalCandidates = db
+      .prepare(
+        `SELECT path, status, action, target_page, domain, primary_type, subtype, tags_json, content
+         FROM proposals
+         ORDER BY proposed_at DESC, path ASC`
+      )
+      .all();
+    const sourceCandidates = db
+      .prepare(
+        `SELECT path, title, source_kind, domain, primary_type, subtype, tags_json, extracted, content
+         FROM sources
+         ORDER BY ingested_at DESC, path ASC`
+      )
+      .all();
+    const runtimeDomains = Array.from(new Set([
+      ...pageCandidates.map((row) => row.domain),
+      ...proposalCandidates.map((row) => row.domain),
+      ...sourceCandidates.map((row) => row.domain),
+    ].filter(Boolean)));
+    const runtimeCollections = Array.from(new Set(
+      pageCandidates.map((row) => row.collection).filter(Boolean)
+    ));
+    const hints = buildQueryHints(repoRoot, normalizedQuery, { runtimeDomains, runtimeCollections });
+    const tokens = hints.tokens.length ? hints.tokens : tokenizeQuery(normalizedQuery);
+    const filteredPageCandidates = applyFieldFilters(pageCandidates, hints, { usePrimaryType: true, useSubtype: true, useCollection: true });
+    const filteredProposalCandidates = applyFieldFilters(proposalCandidates, hints, { usePrimaryType: true, useSubtype: true });
+    const filteredSourceCandidates = applyFieldFilters(sourceCandidates, hints, {
+      usePrimaryType: hints.primary_type_hints.includes('source'),
+      useSubtype: true,
+    });
 
-  const pageRows = takeTopMatches(
-    filteredPageCandidates,
-    rankPageRow,
-    (row, score) => ({
-      path: row.path,
-      title: row.title,
-      domain: row.domain,
-      collection: row.collection || null,
-      page_id: row.page_id || null,
-      confidence: row.confidence,
-      primary_type: row.primary_type,
-      subtype: row.subtype,
-      tags: parseTags(row.tags_json),
-      excerpt: makeExcerpt(row.content, normalizedQuery, tokens),
-      score,
-    }),
-    normalizedQuery.toLowerCase(),
-    tokens,
-    hints,
-    limit
-  );
-  const proposalRows = takeTopMatches(
-    filteredProposalCandidates,
-    rankProposalRow,
-    (row, score) => ({
-      path: row.path,
-      status: row.status,
-      action: row.action,
-      target_page: row.target_page,
-      domain: row.domain,
-      primary_type: row.primary_type,
-      subtype: row.subtype,
-      tags: parseTags(row.tags_json),
-      excerpt: makeExcerpt(row.content, normalizedQuery, tokens),
-      score,
-    }),
-    normalizedQuery.toLowerCase(),
-    tokens,
-    hints,
-    limit
-  );
-  const sourceRows = takeTopMatches(
-    filteredSourceCandidates,
-    rankSourceRow,
-    (row, score) => ({
-      path: row.path,
-      title: row.title,
-      source_kind: row.source_kind,
-      domain: row.domain,
-      primary_type: row.primary_type,
-      subtype: row.subtype,
-      tags: parseTags(row.tags_json),
-      excerpt: makeExcerpt(row.content, normalizedQuery, tokens),
-      score,
-    }),
-    normalizedQuery.toLowerCase(),
-    tokens,
-    hints,
-    limit
-  );
-
-  return {
-    retrieval: {
-      query: normalizedQuery,
+    const pageRows = takeTopMatches(
+      filteredPageCandidates,
+      rankPageRow,
+      (row, score) => ({
+        path: row.path,
+        title: row.title,
+        domain: row.domain,
+        collection: row.collection || null,
+        page_id: row.page_id || null,
+        confidence: row.confidence,
+        primary_type: row.primary_type,
+        subtype: row.subtype,
+        tags: parseTags(row.tags_json),
+        excerpt: makeExcerpt(row.content, normalizedQuery, tokens),
+        score,
+      }),
+      normalizedQuery.toLowerCase(),
       tokens,
-      limit,
-      strategy: 'taxonomy-filter-rank-v1',
-      classification: {
-        domain_hints: hints.domain_hints,
-        primary_type_hints: hints.primary_type_hints,
-        subtype_hints: hints.subtype_hints,
-        collection_hints: hints.collection_hints,
-        focus: hints.focus,
+      hints,
+      limit
+    );
+    const proposalRows = takeTopMatches(
+      filteredProposalCandidates,
+      rankProposalRow,
+      (row, score) => ({
+        path: row.path,
+        status: row.status,
+        action: row.action,
+        target_page: row.target_page,
+        domain: row.domain,
+        primary_type: row.primary_type,
+        subtype: row.subtype,
+        tags: parseTags(row.tags_json),
+        excerpt: makeExcerpt(row.content, normalizedQuery, tokens),
+        score,
+      }),
+      normalizedQuery.toLowerCase(),
+      tokens,
+      hints,
+      limit
+    );
+    const sourceRows = takeTopMatches(
+      filteredSourceCandidates,
+      rankSourceRow,
+      (row, score) => ({
+        path: row.path,
+        title: row.title,
+        source_kind: row.source_kind,
+        domain: row.domain,
+        primary_type: row.primary_type,
+        subtype: row.subtype,
+        tags: parseTags(row.tags_json),
+        excerpt: makeExcerpt(row.content, normalizedQuery, tokens),
+        score,
+      }),
+      normalizedQuery.toLowerCase(),
+      tokens,
+      hints,
+      limit
+    );
+
+    return {
+      retrieval: {
+        query: normalizedQuery,
+        tokens,
+        limit,
+        strategy: 'taxonomy-filter-rank-v1',
+        classification: {
+          domain_hints: hints.domain_hints,
+          primary_type_hints: hints.primary_type_hints,
+          subtype_hints: hints.subtype_hints,
+          collection_hints: hints.collection_hints,
+          focus: hints.focus,
+        },
+        candidate_counts: {
+          pages: filteredPageCandidates.length,
+          proposals: filteredProposalCandidates.length,
+          sources: filteredSourceCandidates.length,
+        },
       },
-      candidate_counts: {
-        pages: filteredPageCandidates.length,
-        proposals: filteredProposalCandidates.length,
-        sources: filteredSourceCandidates.length,
-      },
-    },
-    pages: pageRows,
-    proposals: proposalRows,
-    sources: sourceRows,
-  };
+      pages: pageRows,
+      proposals: proposalRows,
+      sources: sourceRows,
+    };
+  });
 }
 
 module.exports = {
@@ -770,5 +785,6 @@ module.exports = {
   rebuildRuntimeIndex,
   searchRuntimeIndex,
   syncRuntimeFiles,
+  withRuntimeIndex,
   wikiRelative,
 };

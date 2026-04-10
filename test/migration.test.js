@@ -15,10 +15,10 @@ const path = require('path');
 const test = require('node:test');
 
 const { scaffoldRepo } = require('../src/lib/bootstrap');
-const { createCanon, extractCollection, generatePageId, runInternalCommand } = require('../src/lib/wiki-internal');
-const { parseFrontmatterFile } = require('../src/lib/frontmatter');
-const { openRuntimeIndex } = require('../src/lib/runtime-index');
-const { computeCheckFindings } = require('../src/lib/wiki-repo');
+const { createCanon, extractCollection, generatePageId, maintainWorkflow, runInternalCommand } = require('../src/lib/wiki-internal');
+const { parseFrontmatterFile, updateFrontmatterFile } = require('../src/lib/frontmatter');
+const { openRuntimeIndex, syncRuntimeFiles } = require('../src/lib/runtime-index');
+const { computeCheckFindings, findNamedFile, resolveUserFile } = require('../src/lib/wiki-repo');
 const { recordPathAlias, recordTaxonomyAlias, resolvePathAlias, resolveTaxonomyAlias } = require('../src/lib/alias');
 const {
   createMigrationPlan,
@@ -87,6 +87,7 @@ test('createCanon writes page_id and collection to frontmatter and SQLite', (t) 
   // Also verify SQLite was updated
   const db = openRuntimeIndex(repoPath);
   const row = db.prepare("SELECT page_id, collection FROM pages WHERE path = 'canon/domains/ai/rag/chunk-size-strategy.md'").get();
+  db.close();
   assert.ok(row, 'page should be indexed in SQLite');
   assert.equal(row.page_id, frontmatter.page_id, 'SQLite page_id should match frontmatter');
   assert.equal(row.collection, 'rag', 'SQLite collection should be rag');
@@ -751,6 +752,7 @@ test('Fix6: findMatchingPages with include_secondary finds cross-domain pages', 
   const db = openRuntimeIndex(repoPath);
   db.prepare("UPDATE pages SET secondary_domains_json = ? WHERE path LIKE '%cross-domain-page%'")
     .run(JSON.stringify(['secondary-domain']));
+  db.close();
 
   // Without include_secondary, searching secondary-domain should NOT find this page
   const withoutFlag = findMatchingPages(repoPath, { domain: 'secondary-domain' });
@@ -830,5 +832,289 @@ test('Fix8: rollbackMigrationPlan removes alias entries for moved pages', (t) =>
   assert.ok(
     !Object.keys(aliasesAfterRollback.path_map || {}).some(k => k.includes('domain-a/page-to-move')),
     'After rollback, old path alias must be removed from aliases.json'
+  );
+});
+
+test('Fix9: dry-run reports collisions, page_id path changes, and cross_ref impact', (t) => {
+  const repoPath = makeTempRepo(t);
+  registerDomain(repoPath, 'ai', { label: 'AI' });
+
+  const sourcePath = createCanon(repoPath, {
+    targetPage: 'ai/src-page',
+    type: 'concept',
+    title: 'Source Page',
+    sources: [],
+  });
+  updateFrontmatterFile(sourcePath, { cross_refs: ['missing-target'] });
+
+  createCanon(repoPath, {
+    targetPage: 'ai/concepts/src-page',
+    type: 'concept',
+    title: 'Existing Destination',
+    sources: [],
+  });
+
+  const plan = createMigrationPlan(repoPath, {
+    operation_type: 'reclassify',
+    from: { domain: 'ai', collection: null },
+    to: { domain: 'ai', collection: 'concepts' },
+    reason: 'Dry-run reporting regression',
+  });
+
+  const report = dryRunMigrationPlan(repoPath, plan.plan_id);
+  assert.equal(report.collisions_detected, 1, 'dry-run should report one collision');
+  assert.equal(report.collisions.length, 1, 'collision details should be included');
+  assert.ok(report.cross_ref_impact_count >= 1, 'cross_ref impact should reflect frontmatter cross_refs');
+  assert.ok(report.path_changes.every((item) => Object.hasOwn(item, 'page_id')), 'path_changes should carry page_id');
+});
+
+test('Fix10: applied plan cannot be dry-run again', (t) => {
+  const repoPath = makeTempRepo(t);
+  registerDomain(repoPath, 'ai', { label: 'AI' });
+  registerDomain(repoPath, 'ml', { label: 'ML' });
+
+  createCanon(repoPath, {
+    targetPage: 'ai/page-a',
+    type: 'concept',
+    title: 'Page A',
+    sources: [],
+  });
+
+  const plan = createMigrationPlan(repoPath, {
+    operation_type: 'reclassify',
+    from: { domain: 'ai' },
+    to: { domain: 'ml' },
+    reason: 'Prevent status regression',
+  });
+  dryRunMigrationPlan(repoPath, plan.plan_id);
+  applyMigrationPlan(repoPath, plan.plan_id);
+
+  assert.throws(
+    () => dryRunMigrationPlan(repoPath, plan.plan_id),
+    /already been applied/,
+    'applied plan must not be dry-run again'
+  );
+
+  const planRow = listMigrationPlans(repoPath).find((item) => item.plan_id === plan.plan_id);
+  assert.equal(planRow.status, 'applied', 'status must remain applied after rejected dry-run');
+});
+
+test('Fix11: wiki internal alias list --page-id returns matching old paths', (t) => {
+  const repoPath = makeTempRepo(t);
+  const pageId = generatePageId();
+  recordPathAlias(repoPath, 'canon/domains/ai/old-page.md', pageId);
+  recordPathAlias(repoPath, 'canon/domains/ai/older-page.md', pageId);
+
+  const result = runInternalCommand(repoPath, ['alias', 'list', '--page-id', pageId, '--json']);
+  assert.equal(result.page_id, pageId);
+  assert.deepEqual(result.old_paths.sort(), [
+    'canon/domains/ai/old-page.md',
+    'canon/domains/ai/older-page.md',
+  ]);
+});
+
+test('Fix12: maintainWorkflow returns per-rule summary counts', (t) => {
+  const repoPath = makeTempRepo(t);
+  registerDomain(repoPath, 'ai', { label: 'AI' });
+  registerSubtype(repoPath, 'rag', { label: 'RAG' });
+
+  const stalePath = createCanon(repoPath, {
+    targetPage: 'ai/stale-page',
+    type: 'concept',
+    title: 'Stale Page',
+    subtype: 'rag',
+    sources: [],
+  });
+  updateFrontmatterFile(stalePath, { last_updated: '2020-01-01', staleness_days: 120 });
+  const unclassifiedPath = createCanon(repoPath, {
+    targetPage: 'ai/unclassified-page',
+    type: 'concept',
+    title: 'Unclassified Page',
+    sources: [],
+  });
+  updateFrontmatterFile(unclassifiedPath, { subtype: null });
+  syncRuntimeFiles(repoPath, [stalePath, unclassifiedPath]);
+
+  const result = maintainWorkflow(repoPath);
+  assert.equal(typeof result.l002_count, 'number');
+  assert.equal(typeof result.l012_count, 'number');
+  assert.ok(result.l002_count >= 1, 'stale page should increment l002_count');
+  assert.ok(result.l012_count >= 1, 'unclassified page should increment l012_count');
+  assert.equal(result.unclassified_pages, result.l012_count, 'unclassified_pages should match l012_count');
+});
+
+test('Fix13: resolveInternalFile rejects path traversal outside repo', (t) => {
+  const repoPath = makeTempRepo(t);
+  assert.throws(
+    () => runInternalCommand(repoPath, ['frontmatter', 'get', '../../../../etc/passwd', 'title']),
+    /path traversal|escapes allowed roots/,
+    'path traversal inputs must be rejected'
+  );
+});
+
+test('Fix14: internal destination collisions are detected before apply mutates files', (t) => {
+  const repoPath = makeTempRepo(t);
+  registerDomain(repoPath, 'ai', { label: 'AI' });
+
+  createCanon(repoPath, { targetPage: 'ai/a/foo', type: 'concept', title: 'Foo A', sources: [] });
+  createCanon(repoPath, { targetPage: 'ai/b/foo', type: 'concept', title: 'Foo B', sources: [] });
+
+  const plan = createMigrationPlan(repoPath, {
+    operation_type: 'relocate',
+    from: { domain: 'ai' },
+    to: { domain: 'ai', collection: 'shared' },
+    reason: 'Internal collision detection regression',
+  });
+
+  const report = dryRunMigrationPlan(repoPath, plan.plan_id);
+  assert.equal(report.collisions_detected, 1, 'dry-run should report one internal collision');
+  assert.ok(report.collisions.some((item) => item.type === 'internal'), 'collision should be marked internal');
+
+  assert.throws(
+    () => applyMigrationPlan(repoPath, plan.plan_id),
+    /not safe to apply|multiple source pages converge here/,
+    'apply should fail before moving any file'
+  );
+
+  assert.ok(fs.existsSync(path.join(repoPath, '.wiki', 'canon', 'domains', 'ai', 'a', 'foo.md')));
+  assert.ok(fs.existsSync(path.join(repoPath, '.wiki', 'canon', 'domains', 'ai', 'b', 'foo.md')));
+  assert.ok(!fs.existsSync(path.join(repoPath, '.wiki', 'canon', 'domains', 'ai', 'shared', 'foo.md')));
+});
+
+test('Fix15: merge-pages rejects target overlap and duplicate sources', (t) => {
+  const repoPath = makeTempRepo(t);
+  registerDomain(repoPath, 'ai', { label: 'AI' });
+  createCanon(repoPath, { targetPage: 'ai/target', type: 'concept', title: 'Target', sources: [] });
+  createCanon(repoPath, { targetPage: 'ai/source', type: 'concept', title: 'Source', sources: [] });
+
+  assert.throws(
+    () => createMigrationPlan(repoPath, {
+      operation_type: 'merge-pages',
+      from: { page_paths: ['canon/domains/ai/target.md', 'canon/domains/ai/source.md'] },
+      to: { target_path: 'canon/domains/ai/target.md' },
+      reason: 'target overlap',
+    }),
+    /must not also appear in from\.page_paths/,
+    'target must not also appear in source list'
+  );
+
+  assert.throws(
+    () => createMigrationPlan(repoPath, {
+      operation_type: 'merge-pages',
+      from: { page_paths: ['canon/domains/ai/source.md', 'canon/domains/ai/source.md'] },
+      to: { target_path: 'canon/domains/ai/target.md' },
+      reason: 'duplicate sources',
+    }),
+    /must be distinct/,
+    'duplicate source paths must be rejected'
+  );
+});
+
+test('Fix16: rollback removes taxonomy aliases created by rename-domain', (t) => {
+  const repoPath = makeTempRepo(t);
+  registerDomain(repoPath, 'ai', { label: 'AI' });
+  registerDomain(repoPath, 'ai-new', { label: 'AI New' });
+  createCanon(repoPath, { targetPage: 'ai/page-a', type: 'concept', title: 'Page A', sources: [] });
+
+  const plan = createMigrationPlan(repoPath, {
+    operation_type: 'rename-domain',
+    from: { domain: 'ai' },
+    to: { domain: 'ai-new' },
+    reason: 'taxonomy alias rollback',
+  });
+  dryRunMigrationPlan(repoPath, plan.plan_id);
+  applyMigrationPlan(repoPath, plan.plan_id);
+  assert.equal(resolveTaxonomyAlias(repoPath, 'domain', 'ai'), 'ai-new');
+
+  rollbackMigrationPlan(repoPath, plan.plan_id);
+  assert.equal(resolveTaxonomyAlias(repoPath, 'domain', 'ai'), 'ai', 'rollback should remove taxonomy alias');
+});
+
+test('Fix17: merge-pages dry-run reports missing target as not ready to apply', (t) => {
+  const repoPath = makeTempRepo(t);
+  registerDomain(repoPath, 'ai', { label: 'AI' });
+  createCanon(repoPath, { targetPage: 'ai/source-a', type: 'concept', title: 'Source A', sources: [] });
+  createCanon(repoPath, { targetPage: 'ai/source-b', type: 'concept', title: 'Source B', sources: [] });
+
+  const plan = createMigrationPlan(repoPath, {
+    operation_type: 'merge-pages',
+    from: { page_paths: ['canon/domains/ai/source-a.md', 'canon/domains/ai/source-b.md'] },
+    to: { target_path: 'canon/domains/ai/missing-target.md' },
+    reason: 'missing target dry-run',
+  });
+
+  const report = dryRunMigrationPlan(repoPath, plan.plan_id);
+  assert.equal(report.target_exists, false);
+  assert.equal(report.ready_to_apply, false);
+  assert.ok(report.validation_errors.some((item) => item.includes('target page does not exist')));
+});
+
+test('Fix18: rollback accepts applying state and restores partially moved pages', (t) => {
+  const repoPath = makeTempRepo(t);
+  registerDomain(repoPath, 'ai', { label: 'AI' });
+  registerDomain(repoPath, 'ml', { label: 'ML' });
+  const originalPath = createCanon(repoPath, {
+    targetPage: 'ai/page-a',
+    type: 'concept',
+    title: 'Page A',
+    sources: [],
+  });
+
+  const plan = createMigrationPlan(repoPath, {
+    operation_type: 'rename-domain',
+    from: { domain: 'ai' },
+    to: { domain: 'ml' },
+    reason: 'partial apply rollback',
+  });
+  dryRunMigrationPlan(repoPath, plan.plan_id);
+
+  const movedPath = path.join(repoPath, '.wiki', 'canon', 'domains', 'ml', 'page-a.md');
+  fs.mkdirSync(path.dirname(movedPath), { recursive: true });
+  fs.renameSync(originalPath, movedPath);
+  updateFrontmatterFile(movedPath, { domain: 'ml' });
+  syncRuntimeFiles(repoPath, [originalPath, movedPath]);
+
+  const planFile = path.join(repoPath, '.wiki', 'migrations', `${plan.plan_id}.json`);
+  const rawPlan = JSON.parse(fs.readFileSync(planFile, 'utf8'));
+  rawPlan.status = 'applying';
+  rawPlan.rollback_plan = {
+    entries: [
+      {
+        path: 'canon/domains/ai/page-a.md',
+        new_path: 'canon/domains/ml/page-a.md',
+        original: { domain: 'ai' },
+        delete_keys: [],
+      },
+    ],
+  };
+  fs.writeFileSync(planFile, `${JSON.stringify(rawPlan, null, 2)}\n`, 'utf8');
+
+  rollbackMigrationPlan(repoPath, plan.plan_id);
+
+  assert.ok(fs.existsSync(originalPath), 'original path should be restored');
+  assert.ok(!fs.existsSync(movedPath), 'moved path should be removed after rollback');
+  const { frontmatter } = parseFrontmatterFile(originalPath);
+  assert.equal(frontmatter.domain, 'ai');
+});
+
+test('Fix19: public workflow path resolvers reject repo-external files by default', (t) => {
+  const repoPath = makeTempRepo(t);
+  const outsidePath = path.join(path.dirname(repoPath), 'outside.txt');
+  fs.writeFileSync(outsidePath, 'outside', 'utf8');
+
+  assert.throws(
+    () => findNamedFile(repoPath, outsidePath, ['approved']),
+    /escapes repo root/,
+    'findNamedFile should reject files outside repo'
+  );
+  assert.throws(
+    () => resolveUserFile(repoPath, outsidePath),
+    /escapes repo root/,
+    'resolveUserFile should reject files outside repo by default'
+  );
+  assert.equal(
+    resolveUserFile(repoPath, outsidePath, { allowExternal: true }),
+    outsidePath,
+    'allowExternal=true should still permit external merged files'
   );
 });

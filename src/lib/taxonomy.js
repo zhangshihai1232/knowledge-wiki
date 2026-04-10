@@ -2,6 +2,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const { writeFileAtomic } = require('./utils');
 
 const REGISTRY_VERSION = '1.0';
 const DOMAIN_REGISTRY_FILE = 'domains.json';
@@ -96,12 +97,15 @@ function readJsonFile(filePath, fallbackValue) {
   if (!fs.existsSync(filePath)) {
     return JSON.parse(JSON.stringify(fallbackValue));
   }
-  return JSON.parse(fs.readFileSync(filePath, 'utf8'));
+  try {
+    return JSON.parse(fs.readFileSync(filePath, 'utf8'));
+  } catch (err) {
+    throw new Error(`taxonomy: invalid JSON in ${filePath}: ${err.message}`);
+  }
 }
 
 function writeJsonFile(filePath, value) {
-  fs.mkdirSync(path.dirname(filePath), { recursive: true });
-  fs.writeFileSync(filePath, `${JSON.stringify(value, null, 2)}\n`, 'utf8');
+  writeFileAtomic(filePath, `${JSON.stringify(value, null, 2)}\n`);
 }
 
 function ensureTaxonomyRegistry(repoRoot) {

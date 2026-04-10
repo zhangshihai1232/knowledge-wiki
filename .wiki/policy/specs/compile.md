@@ -81,8 +81,8 @@ canon/domains/{target_page}.md
 
 **路由检查**：
 
-- 若 `origin = lint-patrol` 或 `target_page` 以 `_system/` 开头：在 LOG 中记录 `SKIP: routed to maintain`，本次 compile 跳过该 proposal，不修改其 `compiled` 字段，等待 maintain spec 消费。
-- 若 `origin = query-writeback` 且 `trigger_source` 仍为 `system:query-writeback`：在 LOG 中记录 `SKIP: query gap not yet evidence-backed`，本次 compile 跳过该 proposal，不修改其 `compiled` 字段，等待补充真实来源。
+- 若 `origin = lint-patrol` 或 `target_page` 以 `_system/` 开头：`wiki apply run` 会直接拒绝编译并报错，提示该 proposal 应交由 maintain / migrate 工作流消费。
+- 若 `origin = query-writeback` 且 `trigger_source` 仍为 `system:query-writeback`：`wiki apply run` 会直接拒绝编译并报错，要求先补充至少 1 个真实 `sources/...` 路径作为依据；不会自动跳过。
 - 若 `origin = govern` 或 `action = migrate`：在 LOG 中记录 `SKIP: routed to wiki migrate apply`，本次 compile 跳过该 proposal，不修改其 `compiled` 字段，等待治理工作流（`wiki migrate apply <plan_id>`）消费。
 
 **CLI 辅助**：读取 proposal frontmatter 字段：

@@ -7,7 +7,8 @@
     "node": ">=22.5.0"
   },
   "scripts": {
-    "test": "node --test"
+    "test": "node --test",
+    "benchmark:adversarial": "node evaluation/benchmark/adversarial-high-scale-benchmark.js --tier challenge"
   },
   "bin": {
     "wiki": "tools/wiki.js"
