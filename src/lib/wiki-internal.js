@@ -18,35 +18,10 @@ const {
   wikiRelative,
 } = require('./runtime-index');
 const { appendLog, computeCheckFindings, formatDate, formatTimestamp, updateState } = require('./wiki-repo');
-
-function normalizePath(value) {
-  return value.replace(/\\/g, '/');
-}
+const { listMarkdownFiles } = require('./utils');
 
 function repoWikiPath(repoRoot, relativePath) {
   return path.join(repoRoot, '.wiki', relativePath);
-}
-
-function listMarkdownFiles(targetDir) {
-  if (!fs.existsSync(targetDir)) {
-    return [];
-  }
-  const results = [];
-  const stack = [targetDir];
-  while (stack.length > 0) {
-    const currentDir = stack.pop();
-    const entries = fs.readdirSync(currentDir, { withFileTypes: true });
-    for (const entry of entries) {
-      const entryPath = path.join(currentDir, entry.name);
-      if (entry.isDirectory()) {
-        stack.push(entryPath);
-      } else if (entry.isFile() && entry.name.endsWith('.md') && entry.name !== '.gitkeep') {
-        results.push(entryPath);
-      }
-    }
-  }
-  results.sort();
-  return results;
 }
 
 function slugify(value) {
@@ -620,39 +595,37 @@ function importWorkflow(repoRoot, payload) {
   if (!payload || !payload.source || !payload.proposal) {
     throw new Error('import: payload must include source and proposal');
   }
-  const extractedClaims = Array.isArray(payload.source.claims)
-    ? payload.source.claims.filter(Boolean)
-    : Array.isArray(payload.source.extracted_claims)
-      ? payload.source.extracted_claims.filter(Boolean)
-      : [];
-  const dedup = dedupCheck(repoRoot, payload.proposal.target_page || payload.proposal.targetPage || '');
+  const extractedClaims = Array.isArray(payload.source.extracted_claims)
+    ? payload.source.extracted_claims.filter(Boolean)
+    : [];
+  const dedup = dedupCheck(repoRoot, payload.proposal.target_page || '');
   const sourcePath = createSource(repoRoot, {
     kind: payload.source.kind,
     title: payload.source.title,
     url: payload.source.url,
     author: payload.source.author,
-    publishedAt: payload.source.published_at || payload.source.publishedAt,
+    publishedAt: payload.source.published_at,
     domain: payload.source.domain,
     tags: payload.source.tags,
     body: payload.source.body,
-    bodyFile: payload.source.body_file || payload.source.bodyFile,
+    bodyFile: payload.source.body_file,
     extracted: payload.source.extracted,
-    ingestedAt: payload.source.ingested_at || payload.source.ingestedAt,
+    ingestedAt: payload.source.ingested_at,
   });
   const proposalPath = dedup.duplicate
     ? null
     : createProposal(repoRoot, {
         action: payload.proposal.action,
         status: payload.proposal.status,
-        targetPage: payload.proposal.target_page || payload.proposal.targetPage,
-        targetType: payload.proposal.target_type || payload.proposal.targetType,
-        triggerSource: payload.proposal.trigger_source || payload.proposal.triggerSource || wikiRelative(repoRoot, sourcePath),
+        targetPage: payload.proposal.target_page,
+        targetType: payload.proposal.target_type,
+        triggerSource: payload.proposal.trigger_source || wikiRelative(repoRoot, sourcePath),
         confidence: payload.proposal.confidence,
         origin: payload.proposal.origin,
-        autoQualityScore: payload.proposal.auto_quality_score || payload.proposal.autoQualityScore,
+        autoQualityScore: payload.proposal.auto_quality_score,
         body: payload.proposal.body,
-        bodyFile: payload.proposal.body_file || payload.proposal.bodyFile,
-        proposedAt: payload.proposal.proposed_at || payload.proposal.proposedAt,
+        bodyFile: payload.proposal.body_file,
+        proposedAt: payload.proposal.proposed_at,
       });
   if (extractedClaims.length) {
     appendSourceClaims(repoRoot, sourcePath, extractedClaims);

@@ -1,2 +1,4 @@
 .wiki/runtime/*.sqlite
 .wiki/runtime/*.sqlite-*
+.context/
+node_modules/

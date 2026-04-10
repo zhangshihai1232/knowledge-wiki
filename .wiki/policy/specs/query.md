@@ -227,6 +227,8 @@ wiki import --input query-writeback.json --json
 
 **CLI 执行**：
 
+> **说明**：`wiki ask` 命令本身不写日志，此处 `wiki internal append-log` 是该场景的正确工具，非旧命令残留。query spec 没有对应的高层日志写入 contract，`wiki internal` 是唯一正确路径。
+
 ```bash
 wiki internal append-log --spec query \
   --message "Q: {问题摘要} | 类型: {问题类型} | 来源页: {slug列表} | write-back: yes"

@@ -261,6 +261,9 @@ WMT 2014 英德翻译：BLEU 28.4，超越当时所有已知结果。
 
 ### Step 6 ⚙️：runtime 负责 source 声明写入与 extracted 标记
 
+> **若使用 `wiki import`（推荐）**，本步骤由 runtime 在 Step 2 调用时自动完成，无需手动执行。  
+> **若分步操作**（调试或特殊场景），使用以下命令：
+
 回到 Step 2 创建的 source 文件：
 
 **CLI 执行**：
@@ -278,6 +281,9 @@ wiki internal mark-extracted sources/articles/2026-04-08-attention-is-all-you-ne
 ---
 
 ### Step 7 ⚙️：追加 LOG，更新 STATE.md
+
+> **若使用 `wiki import`（推荐）**，本步骤由 runtime 在 Step 2 调用时自动完成，无需手动执行。  
+> **若分步操作**（调试或特殊场景），使用以下命令：
 
 **CLI 执行**：
 
@@ -324,6 +330,8 @@ wiki internal update-state
 ---
 
 ## 调用示例
+
+> **说明**：以下示例展示**分步操作模式**（适用于调试或需要精细控制的场景）。日常使用请优先使用 `wiki import` payload 模式（见 Step 2），该模式由 runtime 统一处理 source 创建、声明写入、日志更新等全部步骤。
 
 **场景**：用户粘贴了一篇关于 Transformer 架构的 AI 文章摘要，要求摄入知识库。
 

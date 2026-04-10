@@ -202,6 +202,16 @@ quality_gates:
 
 **CLI 辅助**：
 
+优先使用高层 workflow contract：
+
+```bash
+wiki maintain --json
+```
+
+该命令默认返回 counts、findings、decays（可选），LLM 在进入维护规划前即可得到已缩圈的结构化输入。
+
+**备选（仅在 `wiki maintain` 不可用或需要单项查询时）**：
+
 ```bash
 # 获取系统统计
 wiki internal count all
@@ -212,20 +222,6 @@ wiki internal scan --format json
 # 读取治理提案 frontmatter
 wiki internal frontmatter get changes/approved/2026-04-08-maintain-staleness-refresh.md origin
 ```
-
-若环境支持 workflow contract，优先直接调用：
-
-```bash
-wiki maintain --json
-```
-
-该命令默认返回：
-
-- counts
-- findings
-- decays（可选）
-
-这样 LLM 在进入维护规划前，先得到已经缩圈好的结构化维护输入。
 
 ---
 
