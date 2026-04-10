@@ -97,6 +97,7 @@ cp "$REPO_ROOT/src/lib/config.js" "$SHARE_DIR/src/lib/config.js"
 cp "$REPO_ROOT/src/lib/frontmatter.js" "$SHARE_DIR/src/lib/frontmatter.js"
 cp "$REPO_ROOT/src/lib/runtime-index.js" "$SHARE_DIR/src/lib/runtime-index.js"
 cp "$REPO_ROOT/src/lib/wiki-internal.js" "$SHARE_DIR/src/lib/wiki-internal.js"
+cp "$REPO_ROOT/src/lib/utils.js" "$SHARE_DIR/src/lib/utils.js"
 cp "$REPO_ROOT/src/lib/wiki-repo.js" "$SHARE_DIR/src/lib/wiki-repo.js"
 mkdir -p "$SHARE_DIR/evaluation/benchmark/fixtures/templates"
 cp "$REPO_ROOT/evaluation/benchmark/fixtures/templates/query-judging-rubric-v1.2.md" \

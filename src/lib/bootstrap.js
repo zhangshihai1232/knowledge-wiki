@@ -293,7 +293,7 @@ function scaffoldRepo(options) {
   ['.gitignore', 'package.json'].forEach((file) => fs.copyFileSync(path.join(repoRoot, file), path.join(targetDir, file)));
   fs.copyFileSync(path.join(repoRoot, 'src/bootstrap-cli.js'), path.join(targetDir, 'src/bootstrap-cli.js'));
   fs.copyFileSync(path.join(repoRoot, 'src/cli.js'), path.join(targetDir, 'src/cli.js'));
-  ['bootstrap.js', 'config.js', 'frontmatter.js', 'runtime-index.js', 'wiki-internal.js', 'wiki-repo.js'].forEach((file) =>
+  ['bootstrap.js', 'config.js', 'frontmatter.js', 'runtime-index.js', 'utils.js', 'wiki-internal.js', 'wiki-repo.js'].forEach((file) =>
     fs.copyFileSync(path.join(repoRoot, 'src/lib', file), path.join(targetDir, 'src/lib', file))
   );
   ['bootstrap-wiki-repo.sh', 'install-global.sh', 'wiki.js'].forEach((file) => {
