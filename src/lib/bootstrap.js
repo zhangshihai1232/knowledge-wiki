@@ -346,6 +346,97 @@ function scaffoldRepo(options) {
   return { targetDir, repoName, configPath };
 }
 
+/**
+ * 把 wiki 注入到一个已有项目目录。
+ *
+ * 与 scaffoldRepo 的区别：
+ * - 目标目录必须已存在（不创建新仓库）
+ * - 只写入 .wiki/ 和 .claude/skills/wiki.md
+ * - .claude/ 其他内容（settings.json、其他 skills、CLAUDE.md 等）原封不动
+ * - 不写入 src/、tools/、package.json 等工程文件
+ * - 若 .wiki/ 已存在且 --force 未设置则报错
+ */
+function initRepo(options) {
+  const repoRoot = options.repoRoot;
+  const targetDir = path.resolve(options.targetDir);
+  const repoName = options.repoName || path.basename(targetDir);
+  const today = new Date().toISOString().slice(0, 10);
+
+  if (!fs.existsSync(targetDir)) {
+    throw new Error(`target directory does not exist: ${targetDir}`);
+  }
+
+  const wikiDir = path.join(targetDir, '.wiki');
+  if (fs.existsSync(wikiDir) && !options.force) {
+    throw new Error('.wiki already exists; use --force to reinitialize');
+  }
+
+  // .wiki 目录结构
+  const wikiDirs = [
+    '.wiki/canon/domains',
+    '.wiki/changes/approved',
+    '.wiki/changes/conflicts',
+    '.wiki/changes/inbox',
+    '.wiki/changes/rejected',
+    '.wiki/changes/resolved',
+    '.wiki/changes/review',
+    '.wiki/policy/registry',
+    '.wiki/policy/schemas',
+    '.wiki/policy/specs',
+    '.wiki/policy/templates',
+    '.wiki/runtime',
+    '.wiki/sources/articles',
+    '.wiki/sources/conversations',
+    '.wiki/sources/notes',
+    '.wiki/sources/references',
+  ];
+  wikiDirs.forEach((dir) => fs.mkdirSync(path.join(targetDir, dir), { recursive: true }));
+
+  // 复制 policy 资产（spec / schema / registry / templates）
+  copyTree(path.join(repoRoot, '.wiki/policy/registry'), path.join(targetDir, '.wiki/policy/registry'));
+  copyTree(path.join(repoRoot, '.wiki/policy/specs'), path.join(targetDir, '.wiki/policy/specs'));
+  copyTree(path.join(repoRoot, '.wiki/policy/schemas'), path.join(targetDir, '.wiki/policy/schemas'));
+  copyTree(path.join(repoRoot, '.wiki/policy/templates'), path.join(targetDir, '.wiki/policy/templates'));
+
+  // 写入 STATE / LOG / canon index
+  writeFile(path.join(targetDir, '.wiki/policy/STATE.md'), createStateFile(repoName, today));
+  writeFile(path.join(targetDir, '.wiki/policy/LOG.md'), createLogFile('操作日志', today, `${repoName} 初始化完成`));
+  writeFile(path.join(targetDir, '.wiki/changes/LOG.md'), createLogFile('变更日志', today, '变更区初始化完成'));
+  writeFile(
+    path.join(targetDir, '.wiki/canon/_index.md'),
+    `---\ntype: index\ntitle: Canon Index\nupdated_at: ${today}\nstatus: active\n---\n\n# Canon Index\n\n当前暂无活跃领域。\n\n## 领域\n\n- 暂无\n`
+  );
+
+  // .gitkeep 占位
+  [
+    '.wiki/canon/domains/.gitkeep',
+    '.wiki/changes/approved/.gitkeep',
+    '.wiki/changes/conflicts/.gitkeep',
+    '.wiki/changes/inbox/.gitkeep',
+    '.wiki/changes/rejected/.gitkeep',
+    '.wiki/changes/resolved/.gitkeep',
+    '.wiki/changes/review/.gitkeep',
+    '.wiki/sources/articles/.gitkeep',
+    '.wiki/sources/conversations/.gitkeep',
+    '.wiki/sources/notes/.gitkeep',
+    '.wiki/sources/references/.gitkeep',
+  ].forEach((file) => touch(path.join(targetDir, file)));
+
+  // 安装 skill：Claude Code 要求格式为 .claude/skills/{name}/SKILL.md（目录形式）
+  // 只写项目级，不碰其他任何 .claude/ 内容
+  const skillSrc = path.join(repoRoot, '.claude/skills/wiki.md');
+  const projectSkillDir = path.join(targetDir, '.claude', 'skills', 'wiki');
+  fs.mkdirSync(projectSkillDir, { recursive: true });
+  fs.copyFileSync(skillSrc, path.join(projectSkillDir, 'SKILL.md'));
+
+  const wikiReadSkillSrc = path.join(repoRoot, '.claude/skills/wiki-read/SKILL.md');
+  const wikiReadSkillDir = path.join(targetDir, '.claude', 'skills', 'wiki-read');
+  fs.mkdirSync(wikiReadSkillDir, { recursive: true });
+  fs.copyFileSync(wikiReadSkillSrc, path.join(wikiReadSkillDir, 'SKILL.md'));
+
+  return { targetDir, repoName };
+}
+
 function printNamespaceStatus(configPath = DEFAULT_CONFIG_PATH) {
   ensureConfigFile(configPath);
   const config = readNamespaceConfig(configPath);
@@ -378,6 +469,7 @@ function listNamespaces(configPath = DEFAULT_CONFIG_PATH) {
 }
 
 module.exports = {
+  initRepo,
   listNamespaces,
   printNamespaceStatus,
   resolveRepoTarget,
