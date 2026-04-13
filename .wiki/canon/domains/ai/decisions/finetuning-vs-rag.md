@@ -1,6 +1,7 @@
 ---
 type: decision
 title: "LLM 微调 vs RAG 选择决策框架"
+summary: "行为/格式问题选Fine-tuning，知识频繁更新/需溯源选RAG，两者都要选混合；含五步简化决策树和四方案成本对比"
 domain: ai
 sources:
   - sources/notes/2026-04-08-llm-finetuning-vs-rag-decision-criteria.md

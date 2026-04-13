@@ -1,6 +1,7 @@
 ---
 type: guide
 title: "RAG Chunk Size 选择策略"
+summary: "短文档(<3000 tokens)用512 flat chunk，长文档(>5000 tokens)用1024+20%overlap；严格延迟SLA不用sentence-window；含embedding模型对齐检查"
 domain: ai
 sources:
   - sources/conversations/2026-04-08-rag-chunk-size-best-practice-debate.md

@@ -1,6 +1,7 @@
 ---
 type: comparison
 title: "向量数据库选型对比：Pinecone vs Weaviate vs Milvus"
+summary: "Pinecone=零运维/SaaS首选，Weaviate=混合搜索/中等规模，Milvus=大规模生产/成本敏感；四维对比含延迟/成本/运维/功能数据"
 domain: ai
 sources:
   - sources/articles/2026-04-08-vector-db-comparison-pinecone-weaviate-milvus.md
