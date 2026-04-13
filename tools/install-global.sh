@@ -118,6 +118,19 @@ chmod +x \
   "$SHARE_DIR/tools/install-global.sh" \
   "$SHARE_DIR/tools/wiki.js"
 
+# 安装 Claude Code skills 到用户级目录，使所有项目均可自动触发
+CLAUDE_SKILLS_DIR="${HOME}/.claude/skills"
+if [ -d "$REPO_ROOT/.claude/skills" ]; then
+  mkdir -p "$CLAUDE_SKILLS_DIR"
+  # wiki skill（目录形式）
+  mkdir -p "$CLAUDE_SKILLS_DIR/wiki"
+  cp "$REPO_ROOT/.claude/skills/wiki.md" "$CLAUDE_SKILLS_DIR/wiki/SKILL.md"
+  # wiki-read skill（目录形式）
+  mkdir -p "$CLAUDE_SKILLS_DIR/wiki-read"
+  cp "$REPO_ROOT/.claude/skills/wiki-read/SKILL.md" "$CLAUDE_SKILLS_DIR/wiki-read/SKILL.md"
+  echo "Installed Claude Code skills to: ${CLAUDE_SKILLS_DIR}"
+fi
+
 cat > "$MAIN_COMMAND_PATH" <<EOF
 #!/usr/bin/env bash
 set -euo pipefail

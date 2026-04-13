@@ -108,6 +108,12 @@ wiki import --input ingest-payload.json --json
 > **LLM 职责**：判断 `source.kind`、生成 source/proposal 的语义内容。  
 > **runtime 职责**：文件名生成、frontmatter 填充、source/proposal 落盘、去重检查、taxonomy suggestion 记录、状态/日志更新。
 
+> **P0 payload 格式约束**：
+> - payload 顶层字段必须是 `source`（对象）、`proposal`（**单数，对象**）、`claims`（数组，可选）
+> - **禁止使用 `proposals`（复数数组）**，runtime 不接受该字段，会抛出 `payload must include source and proposal`
+> - 如果资料需要创建**多个** canon 页，必须**分多次调用** `wiki import`，每次只包含一个 `proposal`
+> - 多次调用时 `source` 内容相同，只改 `proposal` 指向不同的 `target_page`
+
 推荐的 payload 最小分类约定：
 
 - `source.domain`：大领域，如 `ai / product / engineering / operations`
@@ -203,7 +209,8 @@ wiki import --input ingest-payload.json --json
 - 示例：`ai/architectures/transformer`、`ai/concepts/attention-mechanism`
 - domain 参考 source frontmatter 中的 `domain` 字段
 
-**分组原则**：多条声明若指向同一页面，合并为一个 proposal；分属不同页面则分别创建 proposal。
+**分组原则**：多条声明若指向同一页面，合并为一个 proposal；分属不同页面则分别创建 proposal。  
+**多 proposal 执行方式**：不要在 payload 里使用 `proposals[]` 数组——每次调用 `wiki import` 只处理一个 `proposal`，对多个 target_page 分多次调用。
 
 ---
 
