@@ -182,6 +182,7 @@ function updateState(repoRoot, overrides = {}) {
         .prepare("SELECT COUNT(DISTINCT domain) AS count FROM pages WHERE status != 'archived' AND COALESCE(domain, '') != ''")
         .get().count,
       pending_proposals: db.prepare('SELECT COUNT(*) AS count FROM proposals WHERE status IN (?, ?)').get('inbox', 'review').count,
+      approved_uncompiled: db.prepare("SELECT COUNT(*) AS count FROM proposals WHERE status = 'approved' AND (compiled IS NULL OR compiled = '' OR compiled = 'false')").get().count,
       pending_taxonomy_suggestions: taxonomy.pending_suggestions,
       last_promote_at: overrides.last_promote_at,
       last_compile: overrides.last_compile,
@@ -205,6 +206,7 @@ function updateState(repoRoot, overrides = {}) {
   replaceBullet('total_canon_pages', summary.total_canon_pages);
   replaceBullet('total_domains', summary.total_domains);
   replaceBullet('pending_proposals', summary.pending_proposals);
+  replaceBullet('approved_uncompiled', summary.approved_uncompiled);
   replaceBullet('pending_taxonomy_suggestions', summary.pending_taxonomy_suggestions);
   if (summary.last_promote_at) {
     replaceBullet('last_promote_at', summary.last_promote_at);
@@ -475,6 +477,16 @@ function applyReviewDecision(repoRoot, decision, proposalInput, options) {
     const trimmedNote = String(options.note || '').trim();
     if (trimmedNote.length < 20) {
       throw new Error('review approve requires a meaningful --note of at least 20 characters');
+    }
+    // Gate 1.2: query-writeback 提案必须有真实 source 才能 approve
+    if (proposal.origin === 'query-writeback' && !String(proposal.target_page || '').startsWith('_system/')) {
+      const triggerSource = String(proposal.trigger_source || '').trim();
+      if (!triggerSource.startsWith('sources/')) {
+        throw new Error(
+          '[BLOCKED: 缺少真实来源] 此 proposal 尚未补充 sources/... 路径，无法 approve。' +
+            '需先通过 wiki import 补充真实 source，再更新 trigger_source 后方可进入 approved。'
+        );
+      }
     }
   }
 

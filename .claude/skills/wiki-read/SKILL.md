@@ -62,6 +62,19 @@ cat .wiki/canon/domains/{domain}/{category}/{slug}.md
 - `confidence: low` 的内容追加：`[⚠️ 低置信度，建议验证]`
 - 找不到时明确告知，不编造内容
 
+### Step 5.5：主域未命中时，检查 secondary_domains（跨域兜底）
+
+若 Step 1-4 未找到满意答案，执行跨域检索：
+
+```bash
+# 找出所有声明了 secondary_domains 的页面（排除空值）
+grep -r "^secondary_domains:" .wiki/canon/domains/ --include="*.md" -l
+```
+
+对命中文件，读取其 `secondary_domains` frontmatter 字段；若包含当前查询相关的领域，将该页面纳入候选集，按 Step 4 正常展开。
+
+> `secondary_domains` 表示该页面的核心问题跨越多个领域。后端 SQLite 索引已对此字段建立评分（+22 分），主域查询未命中时这是最重要的兜底路径。
+
 ---
 
 ## 约束

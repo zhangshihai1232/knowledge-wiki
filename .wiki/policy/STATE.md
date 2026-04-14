@@ -12,6 +12,7 @@ updated_at: 2026-04-10
 - total_canon_pages: 3
 - total_domains: 1
 - pending_proposals: 0
+- approved_uncompiled: 0
 - pending_taxonomy_suggestions: 0
 - last_ingest: 2026-04-08
 - last_compile: 2026-04-08

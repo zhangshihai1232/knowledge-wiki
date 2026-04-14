@@ -898,7 +898,8 @@ function maintainWorkflow(repoRoot, options = {}) {
   const findings = computeCheckFindings(repoRoot);
   const decays = options.applyDecay ? decayConfidence(repoRoot) : [];
   const taxonomy = getTaxonomySnapshot(repoRoot);
-  updateState(repoRoot, options.applyDecay ? { last_lint: formatDate() } : {});
+  const stateSummary = updateState(repoRoot, options.applyDecay ? { last_lint: formatDate() } : {});
+  counts.approved_uncompiled = stateSummary.approved_uncompiled ?? 0;
   // Separate structural classification signals (S00x) from content lint findings
   const structuralSignals = findings.filter((item) => item.rule.startsWith('S'));
   const lintFindings = findings.filter((item) => !item.rule.startsWith('S'));
