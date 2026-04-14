@@ -2,3 +2,4 @@
 .wiki/runtime/*.sqlite-*
 .context/
 node_modules/
+.worktrees/
