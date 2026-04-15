@@ -232,6 +232,8 @@ wiki import --input ingest-payload.json --json
 - `auto_quality_score >= 0.4`：proposal 写入 `changes/inbox/`（正常流程）
 - `auto_quality_score < 0.4`：proposal 写入 `changes/low-quality/`（暂存区，不进入主审查队列）
 
+**自动路由约束（autonomy: auto）**：`auto_quality_score < 0.4` 时，系统必须直接路由到 `changes/low-quality/`，**不得停下来询问用户是否继续**。`ingest` spec 的 `autonomy: auto` 意味着路由决策由系统自动完成，用户不需要参与低质量判断。若用户希望覆盖此路由，应在摄入后手动将提案从 `low-quality/` 移入 `inbox/`。
+
 **提案去重检查 ⚙️**：
 
 在写入前，通过 CLI 检查是否已存在针对同一 `target_page` 的 pending proposal：
