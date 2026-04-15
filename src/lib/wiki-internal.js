@@ -98,7 +98,12 @@ function resolveInternalFile(repoRoot, target) {
   if (!path.isAbsolute(target) && normalizedTarget.split('/').some((segment) => segment === '..')) {
     throw new Error(`resolveInternalFile: path traversal is not allowed: ${target}`);
   }
-  const allowedRoots = [path.resolve(process.cwd()), path.resolve(repoRoot)];
+  const resolvedCwd = path.resolve(process.cwd());
+  const resolvedRepo = path.resolve(repoRoot);
+  const allowedRoots = [
+    fs.existsSync(resolvedCwd) ? fs.realpathSync(resolvedCwd) : resolvedCwd,
+    fs.existsSync(resolvedRepo) ? fs.realpathSync(resolvedRepo) : resolvedRepo,
+  ];
   const candidates = path.isAbsolute(target)
     ? [path.resolve(target)]
     : [
@@ -116,7 +121,8 @@ function resolveInternalFile(repoRoot, target) {
     }
   }
   const fallback = path.isAbsolute(target) ? path.resolve(target) : path.resolve(process.cwd(), target);
-  if (!allowedRoots.some((root) => isPathWithinRoot(root, fallback))) {
+  const realFallback = fs.existsSync(fallback) ? fs.realpathSync(fallback) : fallback;
+  if (!allowedRoots.some((root) => isPathWithinRoot(root, realFallback))) {
     throw new Error(`resolveInternalFile: path escapes allowed roots: ${target}`);
   }
   return fallback;
@@ -185,8 +191,8 @@ function createProposal(repoRoot, options) {
   if (!['create', 'update', 'archive'].includes(action)) {
     throw new Error('create-proposal: --action must be create|update|archive');
   }
-  if (!['inbox', 'review'].includes(status)) {
-    throw new Error('create-proposal: --status must be inbox|review');
+  if (!['inbox', 'review', 'low-quality'].includes(status)) {
+    throw new Error('create-proposal: --status must be inbox|review|low-quality');
   }
   if (!['high', 'medium', 'low'].includes(confidence)) {
     throw new Error('create-proposal: --confidence must be high|medium|low');
