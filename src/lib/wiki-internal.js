@@ -803,6 +803,17 @@ function importWorkflow(repoRoot, payload) {
     ? payload.source.extracted_claims.filter(Boolean)
     : [];
   const dedup = dedupCheck(repoRoot, payload.proposal.target_page || '');
+  const rawScore = payload.proposal.auto_quality_score;
+  if (rawScore === null || rawScore === undefined) {
+    throw new Error(
+      `[wiki-import] proposal "${payload.proposal.target_page}" is missing auto_quality_score. ` +
+      `Run Step 4.5 to assign a score (0–1 float) before calling wiki import.`
+    );
+  }
+  const qualityScore = typeof rawScore === 'number' ? rawScore : parseFloat(rawScore);
+  const resolvedStatus = !isNaN(qualityScore) && qualityScore < 0.4
+    ? 'low-quality'
+    : (payload.proposal.status || 'inbox');
   const sourcePath = createSource(repoRoot, {
     kind: payload.source.kind,
     title: payload.source.title,
@@ -825,7 +836,7 @@ function importWorkflow(repoRoot, payload) {
     ? null
     : createProposal(repoRoot, {
         action: payload.proposal.action,
-        status: payload.proposal.status,
+        status: resolvedStatus,
         targetPage: payload.proposal.target_page,
         targetType: payload.proposal.target_type,
         domain: payload.proposal.domain,
@@ -850,19 +861,26 @@ function importWorkflow(repoRoot, payload) {
     markExtracted(repoRoot, sourcePath);
   }
   if (dedup.duplicate) {
-    const evidenceLines = [];
-    const sourceRel = wikiRelative(repoRoot, sourcePath);
-    evidenceLines.push(`### 补充证据（来自 ${sourceRel}）`);
-    evidenceLines.push('');
-    if (payload.source.title) {
-      evidenceLines.push(`- 标题: ${payload.source.title}`);
+    if (resolvedStatus === 'low-quality') {
+      process.stderr.write(
+        `[wiki-import] [DEDUP-SKIP] low-quality duplicate for "${payload.proposal.target_page}" — skipping evidence merge.\n`
+      );
+    } else {
+      const evidenceLines = [];
+      const sourceRel = wikiRelative(repoRoot, sourcePath);
+      evidenceLines.push(`### 补充证据（来自 ${sourceRel}）`);
+      evidenceLines.push('');
+      if (extractedClaims.length) {
+        if (payload.source.title) {
+          evidenceLines.push(`- 来源: ${sourceRel}（${payload.source.title}）`);
+        }
+        extractedClaims.forEach((claim) => evidenceLines.push(`- ${claim}`));
+      } else {
+        const titlePart = payload.source.title ? `（${payload.source.title}）` : '';
+        evidenceLines.push(`- 来源: ${sourceRel}${titlePart}`);
+      }
+      mergeProposalEvidence(repoRoot, dedup.path, evidenceLines.join('\n'));
     }
-    if (extractedClaims.length) {
-      extractedClaims.forEach((claim) => evidenceLines.push(`- ${claim}`));
-    } else if (payload.proposal.body) {
-      evidenceLines.push(`- 补充说明: ${String(payload.proposal.body).split('\n').filter(Boolean).join(' ')}`);
-    }
-    mergeProposalEvidence(repoRoot, dedup.path, evidenceLines.join('\n'));
   }
   appendLog(
     repoRoot,

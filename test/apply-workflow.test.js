@@ -274,6 +274,7 @@ test('taxonomy suggestions are queued and can be accepted into the registry', (t
       subtype: 'benchmark',
       confidence: 'medium',
       origin: 'ingest',
+      auto_quality_score: 0.8,
       body: '## 提案摘要\n\nLatency benchmark.\n',
     },
   });
