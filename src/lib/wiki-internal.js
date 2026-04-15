@@ -876,13 +876,11 @@ function importWorkflow(repoRoot, payload) {
       const sourceRel = wikiRelative(repoRoot, sourcePath);
       evidenceLines.push(`### 补充证据（来自 ${sourceRel}）`);
       evidenceLines.push('');
+      const titlePart = payload.source.title ? `（${payload.source.title}）` : '';
       if (extractedClaims.length) {
-        if (payload.source.title) {
-          evidenceLines.push(`- 来源: ${sourceRel}（${payload.source.title}）`);
-        }
+        evidenceLines.push(`- 来源: ${sourceRel}${titlePart}`);
         extractedClaims.forEach((claim) => evidenceLines.push(`- ${claim}`));
       } else {
-        const titlePart = payload.source.title ? `（${payload.source.title}）` : '';
         evidenceLines.push(`- 来源: ${sourceRel}${titlePart}`);
       }
       mergeProposalEvidence(repoRoot, dedup.path, evidenceLines.join('\n'));
