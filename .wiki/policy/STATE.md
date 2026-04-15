@@ -1,19 +1,19 @@
 ---
 type: state
 version: 1.0
-updated_at: 2026-04-10
+updated_at: 2026-04-15
 ---
 
 # LLM Wiki 系统状态
 
 ## 统计
 
-- total_sources: 3
-- total_canon_pages: 3
-- total_domains: 1
-- pending_proposals: 0
+- total_sources: 23
+- total_canon_pages: 6
+- total_domains: 2
+- pending_proposals: 9
 - approved_uncompiled: 0
-- pending_taxonomy_suggestions: 0
+- pending_taxonomy_suggestions: 5
 - last_ingest: 2026-04-08
 - last_compile: 2026-04-08
 - last_promote_at: 2026-04-08T10:20:00+08:00

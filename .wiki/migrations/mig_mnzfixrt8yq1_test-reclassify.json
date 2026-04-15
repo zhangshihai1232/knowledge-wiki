@@ -1,0 +1,42 @@
+{
+  "plan_id": "mig_mnzfixrt8yq1_test-reclassify",
+  "operation_type": "reclassify",
+  "scope": "test reclassify",
+  "reason": null,
+  "from": {
+    "domain": "ai"
+  },
+  "to": {
+    "domain": "ai"
+  },
+  "affected_page_ids": [
+    "pg_mnxzdm5uoawjgv",
+    "pg_mnxzdm60xa4un0",
+    "pg_mnxzdm62sqk8yi"
+  ],
+  "affected_page_paths": [
+    "canon/domains/ai/databases/vector-db-comparison.md",
+    "canon/domains/ai/decisions/finetuning-vs-rag.md",
+    "canon/domains/ai/rag/chunk-size-strategy.md"
+  ],
+  "risk_level": "low",
+  "status": "reviewed",
+  "created_at": "2026-04-15T02:26:37.817Z",
+  "dry_run_report": {
+    "plan_id": "mig_mnzfixrt8yq1_test-reclassify",
+    "operation_type": "reclassify",
+    "scope": "test reclassify",
+    "risk_level": "low",
+    "affected_count": 3,
+    "path_changes": [],
+    "collisions_detected": 0,
+    "collisions": [],
+    "taxonomy_changes": [],
+    "aliases_needed": [],
+    "cross_ref_impact_count": 5,
+    "simulated_at": "2026-04-15T02:26:40.602Z"
+  },
+  "rollback_plan": null,
+  "applied_at": null,
+  "rolled_back_at": null
+}

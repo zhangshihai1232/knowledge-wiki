@@ -1,0 +1,71 @@
+{
+  "version": "1.0",
+  "items": [
+    {
+      "id": "security",
+      "aliases": [
+        "sec",
+        "auth",
+        "safety"
+      ],
+      "category": "concern",
+      "status": "active"
+    },
+    {
+      "id": "performance",
+      "aliases": [
+        "perf",
+        "latency",
+        "speed"
+      ],
+      "category": "concern",
+      "status": "active"
+    },
+    {
+      "id": "cost",
+      "aliases": [
+        "pricing",
+        "budget"
+      ],
+      "category": "concern",
+      "status": "active"
+    },
+    {
+      "id": "scalability",
+      "aliases": [
+        "scale",
+        "capacity"
+      ],
+      "category": "concern",
+      "status": "active"
+    },
+    {
+      "id": "observability",
+      "aliases": [
+        "monitoring",
+        "tracing"
+      ],
+      "category": "concern",
+      "status": "active"
+    },
+    {
+      "id": "deprecated",
+      "aliases": [
+        "legacy",
+        "old"
+      ],
+      "category": "lifecycle",
+      "status": "active"
+    },
+    {
+      "id": "experimental",
+      "aliases": [
+        "wip",
+        "draft",
+        "poc"
+      ],
+      "category": "lifecycle",
+      "status": "active"
+    }
+  ]
+}

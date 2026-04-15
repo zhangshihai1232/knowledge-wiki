@@ -1,0 +1,31 @@
+{
+  "source": {
+    "kind": "article",
+    "title": "RAG 最新实践：Chunk Size 应该更大",
+    "domain": "ai",
+    "primary_type": "source",
+    "subtype": "blog-post",
+    "url": "",
+    "author": "AI工程师博客",
+    "published_at": "2026-04-15",
+    "tags": ["rag", "chunk-size", "retrieval", "embedding"],
+    "authority": "secondary",
+    "body": "## 原始内容\n\n根据我们在生产环境中的大量实验，传统建议的 512 tokens chunk size 已经过时。最新实验表明：\n1. 对于大多数文档类型，2048 tokens 的 chunk size 比 512 tokens 的 F1 分数高出 15%\n2. 短文档也应该使用至少 1024 tokens，因为现代 embedding 模型（如 text-embedding-3-large）上下文窗口已达 8192 tokens\n3. overlap 应该提高到 30-40%，而不是传统的 20%\n\n这与现有 canon 中\"短文档用 512 tokens\"的建议直接矛盾。"
+  },
+  "proposal": {
+    "action": "update",
+    "target_page": "ai/rag/chunk-size-strategy",
+    "target_type": "guide",
+    "domain": "ai",
+    "primary_type": "guide",
+    "subtype": "workflow",
+    "confidence": "medium",
+    "auto_quality_score": 0.65,
+    "body": "## 提案摘要\n\n更新 ai/rag/chunk-size-strategy 页面中关于短文档 chunk size 的建议，引入新实验数据：2048 tokens 在大多数文档类型上 F1 分数比 512 高 15%，且 overlap 建议从 20% 提高到 30-40%。\n\n## 变更内容\n\n### 修改内容\n\n> ⚠️ 冲突：关于短文档 chunk size 存在矛盾陈述\n\n- 现有 canon（ai/rag/chunk-size-strategy）：短文档（<3000 tokens）使用 512 tokens flat chunk，长文档使用 1024+20%overlap\n- 新 source（sources/articles/2026-04-15--2.md）：2048 tokens 比 512 F1 高 15%；短文档应使用至少 1024 tokens；overlap 应提高到 30-40%\n\n## Source 证据\n\n- 对于大多数文档类型，2048 tokens 的 chunk size 比 512 tokens 的 F1 分数高出 15%。（原文：第1点）\n- 短文档也应该使用至少 1024 tokens，因为现代 embedding 模型（如 text-embedding-3-large）上下文窗口已达 8192 tokens。（原文：第2点）\n- overlap 应该提高到 30-40%，而不是传统的 20%。（原文：第3点）\n\n## AI 建议\n\n存在冲突，需人工判断：建议将 canon 页中\"短文档用 512 tokens\"更新为\"推荐 1024-2048 tokens，overlap 30-40%\"，但需注意现有 canon 中存在来自内部测试集的数据支撑（512 在特定场景下 MRR@5=0.73），两种配置均有实验依据，请在自身场景进行 A/B 测试后决定采纳哪方。"
+  },
+  "claims": [
+    "对于大多数文档类型，2048 tokens 的 chunk size 比 512 tokens 的 F1 分数高出 15%。（原文：第1点）",
+    "短文档也应该使用至少 1024 tokens，因为现代 embedding 模型（如 text-embedding-3-large）上下文窗口已达 8192 tokens。（原文：第2点）",
+    "overlap 应该提高到 30-40%，而不是传统的 20%。（原文：第3点）"
+  ]
+}

@@ -44,3 +44,19 @@ started_at: 2026-04-08
 - conflicts: 0
 - result: success
 - note: 新建 canon/domains/ai/decisions/finetuning-vs-rag.md，confidence=low（来源 authority=unverified），页面内含多处 ⚠️ 不确定性标注，已在 canon 页顶部加可信度说明
+
+## 2026-04-15T02:03:10.041Z import
+
+- source: sources/notes/2026-04-15-ai.md | proposal: changes/inbox/2026-04-15-create-membership-tier-recommendation.md
+
+## 2026-04-15T02:11:14.974Z import
+
+- source: sources/articles/2026-04-15--4.md | proposal: changes/inbox/2026-04-15-update-vector-db-comparison.md
+
+## 2026-04-15T02:11:35.187Z import
+
+- source: sources/articles/2026-04-15--5.md | proposal: changes/inbox/2026-04-15-create-vector-index-algorithms.md
+
+## 2026-04-15T02:13:37.144Z import
+
+- source: sources/articles/2026-04-15-2026.md | proposal: dedup-hit

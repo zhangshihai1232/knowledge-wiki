@@ -1,4 +1,101 @@
 {
   "version": "1.0",
-  "items": []
+  "items": [
+    {
+      "kind": "subtype",
+      "value": "recommendation-algorithm",
+      "domain": "ai",
+      "primary_type": "concept",
+      "status": "pending",
+      "count": 1,
+      "first_suggested_at": "2026-04-15T02:03:10.032Z",
+      "last_suggested_at": "2026-04-15T02:03:10.032Z",
+      "examples": [
+        {
+          "via": "create-proposal",
+          "source_path": "changes/inbox/2026-04-15-create-membership-tier-recommendation.md"
+        }
+      ]
+    },
+    {
+      "kind": "subtype",
+      "value": "blog-post",
+      "domain": "ai",
+      "primary_type": "source",
+      "status": "pending",
+      "count": 9,
+      "first_suggested_at": "2026-04-15T02:08:18.437Z",
+      "last_suggested_at": "2026-04-15T02:18:14.997Z",
+      "examples": [
+        {
+          "via": "create-source",
+          "source_path": "sources/articles/2026-04-15-.md"
+        },
+        {
+          "via": "create-source",
+          "source_path": "sources/articles/2026-04-15--2.md"
+        },
+        {
+          "via": "create-source",
+          "source_path": "sources/articles/2026-04-15--3.md"
+        },
+        {
+          "via": "create-source",
+          "source_path": "sources/articles/2026-04-15--4.md"
+        },
+        {
+          "via": "create-source",
+          "source_path": "sources/articles/2026-04-15--5.md"
+        }
+      ]
+    },
+    {
+      "kind": "subtype",
+      "value": "tool",
+      "domain": "ai",
+      "primary_type": "comparison",
+      "status": "pending",
+      "count": 1,
+      "first_suggested_at": "2026-04-15T02:11:14.971Z",
+      "last_suggested_at": "2026-04-15T02:11:14.971Z",
+      "examples": [
+        {
+          "via": "create-proposal",
+          "source_path": "changes/inbox/2026-04-15-update-vector-db-comparison.md"
+        }
+      ]
+    },
+    {
+      "kind": "subtype",
+      "value": "technique",
+      "domain": "ai",
+      "primary_type": "concept",
+      "status": "pending",
+      "count": 1,
+      "first_suggested_at": "2026-04-15T02:11:35.182Z",
+      "last_suggested_at": "2026-04-15T02:11:35.182Z",
+      "examples": [
+        {
+          "via": "create-proposal",
+          "source_path": "changes/inbox/2026-04-15-create-vector-index-algorithms.md"
+        }
+      ]
+    },
+    {
+      "kind": "subtype",
+      "value": "benchmark",
+      "domain": "ai",
+      "primary_type": "source",
+      "status": "pending",
+      "count": 1,
+      "first_suggested_at": "2026-04-15T02:13:37.137Z",
+      "last_suggested_at": "2026-04-15T02:13:37.137Z",
+      "examples": [
+        {
+          "via": "create-source",
+          "source_path": "sources/articles/2026-04-15-2026.md"
+        }
+      ]
+    }
+  ]
 }

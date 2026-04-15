@@ -1,0 +1,29 @@
+{
+  "source": {
+    "kind": "article",
+    "title": "向量数据库技术全景综述",
+    "domain": "ai",
+    "primary_type": "source",
+    "subtype": "blog-post",
+    "url": "",
+    "author": "技术博客",
+    "published_at": "",
+    "tags": ["向量数据库", "vector-database", "hnsw", "ivf", "pq", "索引算法"],
+    "authority": "secondary",
+    "body": "## 原始内容\n\n向量数据库是专为高维向量相似性搜索设计的数据库系统。主要产品包括 Pinecone、Weaviate、Milvus、Qdrant、Chroma。核心技术包括 HNSW、IVF、PQ 等索引算法。选型考虑维度包括：性能、成本、托管vs自建、生态集成。"
+  },
+  "proposal": {
+    "action": "create",
+    "target_page": "ai/databases/vector-index-algorithms",
+    "target_type": "concept",
+    "domain": "ai",
+    "primary_type": "concept",
+    "subtype": "technique",
+    "auto_quality_score": 0.5,
+    "confidence": "medium",
+    "body": "## 提案摘要\n\n新建向量数据库索引算法 canon 页，介绍 HNSW、IVF、PQ 等主流算法的原理与适用场景。\n\n## 变更内容\n\n### 新增内容\n\n**HNSW（Hierarchical Navigable Small World）**\n\nHNSW 是一种基于图的近似最近邻搜索算法，通过构建多层可导航小世界图实现高效检索。在搜索时从上层逐层向下收敛到最近邻，复杂度约为 O(log n)。优点：查询速度快、召回率高；缺点：内存占用较高、索引构建时间较长。\n\n**IVF（Inverted File Index）**\n\nIVF 是一种基于倒排索引的聚类方法，先将向量空间划分为多个聚类（Voronoi cells），搜索时只检索查询向量所属的少数聚类中的向量。可与 PQ 结合进一步压缩。优点：可解释性强、可调精度/速度权衡；缺点：召回率依赖聚类数量和距离计算方式。\n\n**PQ（Product Quantization）**\n\nPQ 是一种向量量化压缩方法，将高维向量分割为多个子空间，对每个子空间进行 k-means 聚类并用聚类中心 ID 表示原始向量。可将向量压缩至原来大小的 1/100 以下，大幅降低存储和计算成本。优点：存储效率高、支持内积/欧氏距离；缺点：有精度损失、查询速度受量化方式影响。\n\n### 修改内容\n\n无（新建页面）\n\n### 删除内容\n\n无"
+  },
+  "claims": [
+    "向量数据库的核心技术包括 HNSW、IVF、PQ 等索引算法。（原文：第3句）"
+  ]
+}

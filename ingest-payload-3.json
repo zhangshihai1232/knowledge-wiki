@@ -1,0 +1,28 @@
+{
+  "source": {
+    "kind": "article",
+    "title": "向量数据库最新对比报告（2026版）",
+    "domain": "ai",
+    "primary_type": "source",
+    "subtype": "benchmark",
+    "tags": ["向量数据库", "Pinecone", "Weaviate", "Milvus", "数据库对比"],
+    "authority": "secondary",
+    "body": "## 原始内容\n\n- Pinecone 在高并发场景下 QPS 可达 10000+\n- Weaviate 支持多模态向量（文本+图像同时检索）\n- Milvus 3.0 引入了分布式架构，支持 PB 级数据"
+  },
+  "proposal": {
+    "action": "update",
+    "target_page": "ai/databases/vector-db-comparison",
+    "target_type": "concept",
+    "domain": "ai",
+    "primary_type": "concept",
+    "subtype": "database",
+    "confidence": "medium",
+    "auto_quality_score": 0.65,
+    "body": "## 提案摘要\n\n更新向量数据库对比页面，补充 2026 版最新评测数据。\n\n## 变更内容\n\n### 新增内容\n\n**Pinecone 性能数据**\n\nPinecone 在高并发场景下 QPS 可达 10000+。\n\n**Weaviate 多模态支持**\n\nWeaviate 支持多模态向量（文本+图像同时检索）。\n\n**Milvus 3.0 架构升级**\n\nMilvus 3.0 引入了分布式架构，支持 PB 级数据。\n\n## Source 证据\n\n- Pinecone 在高并发场景下 QPS 可达 10000+。（来源：向量数据库最新对比报告（2026版））\n- Weaviate 支持多模态向量（文本+图像同时检索）。（来源：向量数据库最新对比报告（2026版））\n- Milvus 3.0 引入了分布式架构，支持 PB 级数据。（来源：向量数据库最新对比报告（2026版））\n\n## AI 建议\n\n建议在现有向量数据库对比页面中补充这些最新评测数据。\n"
+  },
+  "claims": [
+    "Pinecone 在高并发场景下 QPS 可达 10000+。（来源：向量数据库最新对比报告（2026版））",
+    "Weaviate 支持多模态向量（文本+图像同时检索）。（来源：向量数据库最新对比报告（2026版））",
+    "Milvus 3.0 引入了分布式架构，支持 PB 级数据。（来源：向量数据库最新对比报告（2026版））"
+  ]
+}

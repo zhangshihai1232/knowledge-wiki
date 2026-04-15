@@ -1,0 +1,31 @@
+{
+  "source": {
+    "kind": "article",
+    "title": "向量数据库技术全景综述",
+    "domain": "ai",
+    "primary_type": "source",
+    "subtype": "blog-post",
+    "url": "",
+    "author": "技术博客",
+    "published_at": "",
+    "tags": ["向量数据库", "vector-database", "pinecone", "weaviate", "milvus", "qdrant", "chroma"],
+    "authority": "secondary",
+    "body": "## 原始内容\n\n向量数据库是专为高维向量相似性搜索设计的数据库系统。主要产品包括 Pinecone、Weaviate、Milvus、Qdrant、Chroma。核心技术包括 HNSW、IVF、PQ 等索引算法。选型考虑维度包括：性能、成本、托管vs自建、生态集成。"
+  },
+  "proposal": {
+    "action": "update",
+    "target_page": "ai/databases/vector-db-comparison",
+    "target_type": "comparison",
+    "domain": "ai",
+    "primary_type": "comparison",
+    "subtype": "tool",
+    "auto_quality_score": 0.53,
+    "confidence": "medium",
+    "body": "## 提案摘要\n\n在现有向量数据库对比页面中补充 Qdrant 和 Chroma 两个产品，丰富对比矩阵，覆盖全部五大主流向量数据库产品。\n\n## 变更内容\n\n### 修改内容\n\n**新增产品列：Qdrant**\n\n- Qdrant：开源向量相似性搜索引擎，采用 Rust 实现，提供 HNSW 和 IVF-Flat 索引支持，支持过滤条件、分布式部署，API 友好，延迟低。\n\n**新增产品列：Chroma**\n\n- Chroma：开源向量数据库，专注于 AI 应用场景（尤其是 LLM/RAG），提供简单易用的 SDK，支持原地更新向量，部署轻量（可单节点），适合中小规模场景。\n\n### 补充选型维度\n\n- 生态集成：Pinecone/Weaviate/Milvus/Qdrant/Chroma 与主流 AI 框架（LangChain、LlamaIndex）的集成程度差异。"
+  },
+  "claims": [
+    "向量数据库是专为高维向量相似性搜索设计的数据库系统。（原文：第1句）",
+    "主要产品包括 Pinecone、Weaviate、Milvus、Qdrant、Chroma。（原文：第2句）",
+    "选型考虑维度包括：性能、成本、托管vs自建、生态集成。（原文：第4句）"
+  ]
+}
